@@ -1,0 +1,25 @@
+[
+{
+"hostname": "router.localdomain", 
+"ipv4": "10.0.0.1", 
+"mac": "0A:00:00:00:00:01", 
+"model": "My Model", 
+"name": "router", 
+"vendor": "My Vendor"
+}, 
+{
+"hostname": "server.localdomain", 
+"ipv4": "10.0.0.2", 
+"mac": "0B:00:00:00:00:02", 
+"model": "ubuntu server", 
+"name": "My Ubuntu Server", 
+"vendor": "vendor"
+}, 
+{
+"ipv4": "10.0.0.3", 
+"mac": "0C:00:00:00:00:03", 
+"model": "phone model", 
+"name": "My Cell Phone", 
+"vendor": "vendor"
+}
+]
