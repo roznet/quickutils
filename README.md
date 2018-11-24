@@ -1,0 +1,2 @@
+# quickutils
+Short adhoc utils
