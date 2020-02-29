@@ -291,14 +291,11 @@ class Config :
                     m_src = os.path.getmtime( x.src_file() )
                     m_dir = os.path.getmtime( x.dir_file() )
                     if m_dir < m_src:
-                        print( 'cp %s %s' % (x.src_file(), x.dir_file() ) )
-                        if self.args.execute is True:
-                            shutil.copyfile( x.src_file(), x.dir_file() )
+                        self.copyfile(x.src_file(), x.dir_file() )
                     else:
-                        print( 'cp %s %s' % (x.dir_file(), x.src_file() ) )
-                        if self.args.execute is True:
-                            shutil.copyfile( x.dir_file(), x.src_file() )
-                            
+                        self.copyfile(x.dir_file(), x.src_file() )
+
+        self.execute_warning()
 
     def cmd_pull(self):
         exists = [x for x in self.list_file_pairs() if x.src_file_exists() ]
@@ -310,9 +307,9 @@ class Config :
                 elif not x.dir_is_readable():
                     print( 'cannot read: %s' %(x.dir_file(),))
                 else:
-                    print( 'cp %s %s' % (x.src_file(), x.dir_file() ) )
-                    if self.args.execute is True:
-                        shutil.copyfile( x.src_file(), x.dir_file() )
+                    self.copyfile(x.src_file(), x.dir_file() )
+                    
+        self.execute_warning()
 
 
     def cmd_push(self):
@@ -320,17 +317,35 @@ class Config :
 
         for x in exists:
             if not x.is_match():
-                print( 'cp %s %s' % (x.dir_file(), x.src_file() ) )
-                if self.args.execute is True:
-                    shutil.copyfile( x.dir_file(), x.src_file() )
+                self.copyfile(x.dir_file(), x.src_file() )
 
+        self.execute_warning()
+                    
+
+    def copyfile(self,from_path,to_path):
+        if self.args.execute:
+            print( 'cp {} {}'.format(x.dir_file(), x.src_file() ) )
+            try:
+                shutil.copyfile( from_path, to_path )
+            except IOError as io_err:
+                to_dir = os.path.dirname( to_path )
+                os.makedirs( to_dir )
+                shutil.copyfile( from_path, to_path )
+        else:    
+            print( 'cp {} {}'.format(from_path, to_path ) )
+            
+    def execute_warning(self):
+        if not self.args.execute:
+            print()
+            print( 'Preview mode. Files were not copied, add --execute option to copy' )
+        
     def cmd_install(self):
         for x in self.list_file_pairs():
             if not x.src_file_exists() or not x.is_match():
-                print( 'cp %s %s' % (x.dir_file(), x.src_file() ) )
-                if self.args.execute is True:
-                    shutil.copyfile( x.dir_file(), x.src_file() )
+                self.copyfile(x.dir_file(), x.src_file() )
 
+        self.execute_warning()
+                    
     def cmd_status(self):
         exists = [ x for x in self.list_file_pairs() if x.src_file_exists() ]
         unknown = [ x for x in self.list_file_pairs() if not x.src_file_exists() ]
