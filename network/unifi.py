@@ -1,32 +1,46 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 #
 
 import argparse
-from requests import Session
 import re
 import json
 import urllib3
 from pprint import pprint
 import os
 from lancheck import DeviceList,Device
+from requests import Session, Request
+from requests_toolbelt import SSLAdapter
 
 class UnifiController(object):
 
     #### SETUP #
     def __init__(self, verify_ssl=False):
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        
-        if os.path.isfile( '.unifi.json' ):
-            with open( '.unifi.json', 'r') as jsonfile:
+
+        configpath = self.config_file_path()
+
+        if os.path.isfile( configpath ):
+            with open( configpath, 'r') as jsonfile:
                 self.config = json.load( jsonfile )
         else:
             self.report_invalid_config()
 
         self.validate_config()
+
         self.session = Session()
+        
         # in case we ever get a certificate
         self.verify_ssl = False
         self.last_response = None
+
+    def config_file_path(self):
+        if os.path.isfile( '.unifi.json' ):
+            return '.unifi.json'
+        elif os.path.isfile( os.path.expanduser( '~/.unifi.json' ) ):
+            return os.path.expanduser( '~/.unifi.json' )
+        # if nothing found will create local
+        return '.unifi.json'
+        
         
     def report_invalid_config(self):
         print( "Invalid .unifi.json, saving template")
@@ -122,7 +136,7 @@ class UnifiController(object):
             id = orig['_id']
 
             updated = {}
-            for key,val in new.iteritems():
+            for key,val in new.items():
                 updated[key] = val
             url = "/api/s/{site}/rest/user/" + id
 
@@ -146,7 +160,7 @@ class UnifiController(object):
         defs = { 'ip':'ipv4', 'name':'name', 'hostname':'hostname', 'mac':'mac', 'model':'model','_id':'_id' }
         
         info = {}
-        for (key,mapped) in defs.iteritems():
+        for (key,mapped) in defs.items():
             if key in one:
                 info[mapped] = one[key]
 
@@ -169,7 +183,7 @@ class UnifiController(object):
         
         if 'model' in info and info['model'] in models:
             model = info['model']
-            for (k,v) in models[ model ].iteritems():
+            for (k,v) in models[ model ].items():
                 info[k] = v
 
         if 'ipv4' not in info:
@@ -188,7 +202,7 @@ class UnifiController(object):
             remap = {'channel':'channel','essid':'ssid','bssid':'mac'}
             for wifi in one['vap_table']:
                 newinfo = dict(main.info)
-                for (key,mapped) in remap.iteritems():
+                for (key,mapped) in remap.items():
                     newinfo[mapped] = wifi[key]
                 if newinfo['channel'] > 20:
                     newinfo['frequency'] = "5 Ghz"
@@ -257,11 +271,11 @@ class Command :
         list.display_human(fields)
 
         devices = DeviceList.from_json(args.network,all=True)
-        devices.update_with( list, override=['ipv4','channel','frequency'])
+        devices.update_with( list, override=['ipv4','frequency' ])
 
         devices.display_changes()
         
-        print devices.status()
+        print( devices.status() )
         
         devices.save_as_json_logic(self.args.network,self.args.save,self.args.force)
 
@@ -281,7 +295,7 @@ class Command :
 
         list.display_changes(['name'])
         
-        print list.status()
+        print( list.status() )
 
         
     def cmd_map_names(self):
@@ -300,7 +314,7 @@ class Command :
                 #print( 'change name to {}'.format( device['name'] ) )
                 #unifi.change_user_info(x,{'name':device['name']})
             else:
-                print mac
+                print( mac )
 
             
         
@@ -313,7 +327,7 @@ if __name__ == "__main__":
         'push': {'attr':'cmd_push_to_unifi','help':'Update names on the controller from the local database'}
     }
 
-    description = "\n".join( [ '  {}: {}'.format( k,v['help'] ) for (k,v) in commands.iteritems() ] )
+    description = "\n".join( [ '  {}: {}'.format( k,v['help'] ) for (k,v) in commands.items() ] )
 
     parser = argparse.ArgumentParser( description="Interact with the unifi controller using:\n", formatter_class=argparse.RawTextHelpFormatter )
     parser.add_argument( 'command', metavar='Command', help='command is devices, clients\n' + description )
@@ -330,7 +344,7 @@ if __name__ == "__main__":
     if args.command in commands:
         getattr(command,commands[args.command]['attr'])()
     else:
-        print 'Invalid command "{}"'.format( args.command)
+        print( 'Invalid command "{}"'.format( args.command) )
         parser.print_help()
 
 

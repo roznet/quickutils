@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 #
 # 
 # 
@@ -128,9 +128,9 @@ class Device:
         for key in self.changed:
             if not check or key in check:
                 if self.changed[key] == self.info[key]:
-                    print 'new %s: %s' %( key, self.info[key] )
+                    print( 'new {}: {}'.format( key, self.info[key] ) )
                 else:
-                    print 'dif %s: %s -> %s' %( key, self.changed[key], self.info[key] )
+                    print( 'dif {}: {} -> {}'.format( key, self.changed[key], self.info[key] ) )
     
 class DeviceList:
     def __init__(self,devices):
@@ -142,7 +142,7 @@ class DeviceList:
             mac = device.mac()
             if mac:
                 if mac in self.devices_by_mac:
-                    print 'Duplicate %s %s' %(device, self.devices_by_mac[mac],)
+                    print( 'Duplicate {} {}'.format(device, self.devices_by_mac[mac]) )
                 else:
                     self.devices_by_mac[ mac ] = device
                                               
@@ -161,7 +161,7 @@ class DeviceList:
     
     def __getitem__(self,key):
         if isinstance(key, int):
-            return self.devices_by_mac.values()[key]
+            return list(self.devices_by_mac.values())[key]
         elif isinstance(key, str):
             return self.devices_by_mac[key]
 
@@ -181,7 +181,7 @@ class DeviceList:
         if sortfield == 'mac':
             sortkey = lambda x: (x[sortfield])
         else:
-            sortkey = lambda x: (x[sortfield],x['mac'])
+            sortkey = lambda x: (str(x[sortfield]) if x[sortfield] else '',x['mac'])
             if sortfield == 'ipv4':
                 sortkey = lambda x: (inet_aton(x[sortfield]),x['mac'])
                 
@@ -190,7 +190,7 @@ class DeviceList:
 
     def unknown_devices(self):
         rv = []
-        for mac,dev in self.devices_by_mac.iteritems():
+        for mac,dev in self.devices_by_mac.items():
             if 'name' not in dev or dev['name'] == '':
                 rv += [dev]
                 
@@ -210,15 +210,13 @@ class DeviceList:
     
     @staticmethod
     def from_json(fname,all=True):
-            
         devices = []
-        if os.path.isfile(fname):
-            with open( fname, 'r') as jsonfile:
-                initial = json.load( jsonfile )
-                for one in initial:
-                    device = Device( one )
-                    if all or not device.is_disabled():
-                        devices.append( device )
+        with open( fname, 'r') as jsonfile:
+            initial = json.load( jsonfile )
+            for one in initial:
+                device = Device( one )
+                if all or not device.is_disabled():
+                    devices.append( device )
 
         return DeviceList( devices )
 
@@ -273,11 +271,11 @@ class DeviceList:
         rv = {}
         with open( fname ) as fp:
             prev = json.load( fp )
-            for network,defs in prev.iteritems():
+            for network,defs in prev.items():
                 for one in defs:
                     device = {'network':network}
                     wifis = None
-                    for key,val in one.iteritems():
+                    for key,val in one.items():
                         if key == 'wifi':
                             wifis = val
                         elif key == 'ip':
@@ -286,7 +284,7 @@ class DeviceList:
                             device[key] = val
                     if wifis:
                         for wifi in wifis:
-                            for key,val in device.iteritems():
+                            for key,val in device.items():
                                 if key not in wifi:
                                     wifi[key] = val
                             if 'mac' in wifi and wifi['mac'] != '':
@@ -301,10 +299,10 @@ class DeviceList:
         will update device in list with extra info from other device list
         '''
 
-        for mac,device in self.devices_by_mac.iteritems():
+        for mac,device in self.devices_by_mac.items():
             if mac in other:
                 otherdevice = other[mac]
-                for key,val in otherdevice.info.iteritems():
+                for key,val in otherdevice.info.items():
                     if key not in device:
                         device[key] = val
             device.add_vendor()
@@ -316,7 +314,6 @@ class DeviceList:
         will add new devices if they are missing.
         if not missing and override not None, will update corresponding fields
         '''
-
         for device in other:
             mac = device.mac()
             if mac:
@@ -373,12 +370,12 @@ class DeviceList:
         if save:
             if self.has_changes() or force:
                 self.save_as_json(fname)
-                print 'Saved into %s' %(fname,)
+                print( 'Saved into {}'.format(fname))
             else:
-                print 'No changes to save'
+                print( 'No changes to save' )
         else:
             if self.has_changes():
-                print 'Nothing saved, use --save option to save to file'
+                print( 'Nothing saved, use --save option to save to file' )
         
                 
     def save_as_json(self,fname):
@@ -392,7 +389,7 @@ class DeviceList:
         
         rv = defaultdict(int)
         for x in self.devices_list():
-            for field,val in x.info.iteritems():
+            for field,val in x.info.items():
                 rv[field] = max(rv[field],len(str(val)))
         self.cols = rv
         return rv
@@ -401,33 +398,34 @@ class DeviceList:
         for one in self.devices_list_ordered_by('ipv4'):
             if one.has_changed(check):
                 if one.is_new():
-                    print '--NEW: %s' %(one,)
+                    print( '--NEW: {}'.format(one) )
                 else:
-                    print '--CHANGED: %s' %(one,)
+                    print( '--CHANGED: {}'.format(one))
                 one.show_changes(check)
                     
     def display_kismet(self, uuid):
         for one in self.devices_list_ordered_by('mac'):
             if 'name' in one and one['name'] != '':
                 macsp = one.mac().upper().split(':')
-                key = '%s_%s' %(uuid,''.join(reversed(macsp)))
-                print "INSERT INTO device_names (key,name) VALUES ('%s0000','%s');" %(key, one['name'])
+                key = '{}_{}'.format(uuid,''.join(reversed(macsp)))
+                print( "INSERT INTO device_names (key,name) VALUES ('{}0000','{}');".format(key, one['name']))
 
     def display_wireshark(self, uuid):
         for one in self.devices_list_ordered_by('ipv4'):
-            print "%s %s" %(one.mac(), one['name'].replace(' ','_'))
+            if 'name' in one and one['name']:
+                print( "{} {}".format(one.mac(), one['name'].replace(' ','_')) )
 
     def display_hosts(self):
-        print "# Hostnames"
+        print( "# Hostnames" )
         for one in self.devices_list_ordered_by('ipv4'):
             if 'hostname' in one:
-                print "{ipv4:13s}\t{hostname}".format(**one.info)
-        print "# Aliases"
+                print( "{ipv4:13s}\t{hostname}".format(**one.info) )
+        print( "# Aliases" )
         for one in self.devices_list_ordered_by('ipv4'):
             if 'hostname_aliases' in one:
                 aliases = one['hostname_aliases']
                 for alias in aliases:
-                    print "{ipv4:13s}\t{hostname}".format(ipv4=one['ipv4'],hostname=alias)
+                    print( "{ipv4:13s}\t{hostname}".format(ipv4=one['ipv4'],hostname=alias) )
 
     def display_static_host_mapping(self):
         jsondata = {}
@@ -440,18 +438,34 @@ class DeviceList:
                 for alias in aliases:
                     jsondata[ alias ] = { "inet": one['ipv4'] }
 
-        print json.dumps( { "system": { "static-host-mapping": { "host-name": jsondata } } }, indent=2 )
+        print( json.dumps( { "system": { "static-host-mapping": { "host-name": jsondata } } }, indent=2 ) )
 
-                
+    def display_homeassistant_single( self, one, fields ):
+        for field in fields:
+            if field in one:
+                return one[field]
+        return 'na'
+        
+    def display_homeassistant(self):
+        snetwork = self.devices_list_ordered_by( 'name' )
+        for one in snetwork:
+            if 'track' in one and one['track']:
+                device = self.display_homeassistant_single(one, ['name', 'hostname', 'mac']).replace(' ', '_').lower()
+                print( '{}:'.format( device ) )
+                print( '  name: {}'.format( self.display_homeassistant_single(one, ['name', 'hostname','model' ])))
+                print( '  hide_if_away: false' )
+                print( '  mac: {}'.format( one['mac'] ) )
+                print( '  track: true' )
+        
     def display_human(self, fields=['name','ipv4','mac','vendor']):
 
         orderedfields = fields;
         cols = self.col_width()
         snetwork = self.devices_list_ordered_by( fields[0] )
 
-        print '|'.join([ '{0: <{width}}'.format(str(k) , width=cols[k]) for k in orderedfields])
+        print( '|'.join([ '{0: <{width}}'.format(str(k) , width=cols[k]) for k in orderedfields]) )
         for one in snetwork:
-            print '|'.join([ '{0: <{width}}'.format(str(one[k]) if k in one else '', width=cols[k]) for k in orderedfields])
+            print( '|'.join([ '{0: <{width}}'.format(str(one[k]) if k in one else '', width=cols[k]) for k in orderedfields]) )
 
 
     def find_one_field(self,field):
@@ -484,8 +498,6 @@ class DeviceList:
         extra = [x for x in extra if x and x not in display]
 
         rv = display + extra
-        if not rv:
-            rv = minimumfields
         return rv
 
 
@@ -535,12 +547,14 @@ class Command :
         elif self.args.display == 'human':
             fields = devices.build_fields(self.args.args, ['name','mac','ipv4','vendor'])
             devices.display_human(fields=fields)
+        elif self.args.display == 'homeassistant':
+            devices.display_homeassistant()
         else:
-            print( 'Invalid display "{}".\nUse one of human|kismet|wireshark|hosts|static_host_mapping'.format( self.args.display ) )
+            print( 'Invalid display "{}".\nUse one of human|kismet|wireshark|hosts|static_host_mapping|homeassistant'.format( self.args.display ) )
 
         if self.args.save and self.args.force:
             devices.save_as_json( args.json)
-            print 'Saved {}'.format( args.json )
+            print( 'Saved {}'.format( args.json ) )
 
 
     def cmd_live(self):
@@ -556,14 +570,14 @@ class Command :
         live_devices.display_human(fields)
         live_devices.save_as_targets(self.args.targets)
 
-        print 'Found %d devices' %(len(live_devices),)
+        print( 'Found {} devices'.format(len(live_devices)) )
 
     def cmd_fields(self):
         devices = DeviceList.from_json(args.json,all=args.all)
         fields = {}
         keylen = 0
         for device in devices.devices_list():
-            for key,val in device.info.iteritems():
+            for key,val in device.info.items():
                 info = {'count':0,'sample':''}
                 if key in fields:
                     info = fields[key]
@@ -582,9 +596,13 @@ class Command :
             info = fields[key]
             keystr = '{0: <{width}}'.format(key,width=keylen)
 
-            print '%s[%d/%d (%d%%)]: %s' %( keystr, info['count'], len(devices), 100.0*info['count'] / len(devices), info['sample'] )
+            print( '%s[%d/%d (%d%%)]: %s' %( keystr, info['count'], len(devices), 100.0*info['count'] / len(devices), info['sample'] ) )
 
     def cmd_parse(self):
+        if len( args.args ) < 1 or not os.path.isfile( args.args[0] ):
+            print( 'Expecting a readable file to parse got {}'.format( args.args[0] if len(args.args) > 0 else 'no filename' ) )
+            exit()
+        
         devices = DeviceList.from_json(args.json,all=True)
         re_mac = re.compile('([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}')
         re_ip  = re.compile('([0-9]{1,3}\.){3}[0-9]{1,3}')
@@ -611,7 +629,7 @@ class Command :
             found.display_human(fields=fields)
 
             
-            print 'Total %d lines, %d devices, Unknown: %d' %(cnt, len(found), len(unknown))
+            print( 'Total %d lines, %d devices, Unknown: %d' %(cnt, len(found), len(unknown)) )
             if len(unknown)>0:
                 unknown.display_human(fields=['mac','ipv4','vendor','lastlog'])
         
@@ -626,7 +644,7 @@ class Command :
         
         devices.update_with( found, override=['ipv4'] )
         
-        print devices.status()
+        print( devices.status() )
 
         devices.display_changes()
         devices.save_as_json_logic(self.args.json,self.args.save,self.args.force)
@@ -635,14 +653,14 @@ class Command :
 if __name__ == "__main__":
 
     commands = {
-        'parse': {'attr':'cmd_parse','help':'Parse file'},
+        'parse': {'attr':'cmd_parse','help':'Parse a log file extracting IP and MAC'},
         'show': {'attr':'cmd_show','help':'show existing device from json file'},
         'update': {'attr':'cmd_update','help':'update json file from nmap or xml file' },
         'live':{'attr':'cmd_live','help':'show list host running nmap'},
         'fields':{'attr':'cmd_fields','help':'show list of available fields in the json file' }
     }
     
-    description = "\n".join( [ '{}: {}'.format( k,v['help'] ) for (k,v) in commands.iteritems() ] )
+    description = "\n".join( [ '{}: {}'.format( k,v['help'] ) for (k,v) in commands.items() ] )
 
     parser = argparse.ArgumentParser( description='Manage list of host form a json file\n', formatter_class=argparse.RawTextHelpFormatter )
     parser.add_argument( 'command', metavar='Command', help='command is one of\n' + description )
@@ -664,7 +682,7 @@ if __name__ == "__main__":
     command = Command(args)
 
     if args.command not in commands:
-        print '\nUnknown Command {}\n'.format( args.command )
+        print( '\nUnknown Command {}\n'.format( args.command ) )
         parser.print_help()
     else:
         getattr(command,commands[args.command]['attr'])()
