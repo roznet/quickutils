@@ -324,7 +324,7 @@ class Config :
 
     def copyfile(self,from_path,to_path):
         if self.args.execute:
-            print( 'cp {} {}'.format(x.dir_file(), x.src_file() ) )
+            print( 'cp {} {}'.format(from_path, to_path ) )
             try:
                 shutil.copyfile( from_path, to_path )
             except IOError as io_err:
