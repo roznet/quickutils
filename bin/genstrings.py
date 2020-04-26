@@ -76,6 +76,7 @@ class Localizations:
         self.added = {}
         self.commentchange = {}
         self.commentadded = {}
+        self.deleted = {}
         
     def add_localization(self,entry):
         self.localizations.append(entry)
@@ -95,6 +96,30 @@ class Localizations:
         self.comments = rebuilt.comments
         self.translations = rebuilt.translations
         self.translated = rebuilt.translated
+
+    def find_deleted(self,other,remove=False):
+        remain = []
+        
+        for entry in self.localizations:
+            if entry.key not in other.translations:
+                self.deleted[entry.key] = entry
+                entry.attr = '/* DELETED */'
+            else:
+                remain.append( entry )
+
+        if remove:
+            self.localizations = remain
+            self.rebuild()
+
+    def mark_translation(self,native=False):
+        for entry in self.localizations:
+            if not entry.attr:
+                if native:
+                    if entry.key != entry.translation:
+                        entry.attr = '/* CHANGED */'
+                else:
+                    if entry.key == entry.translation:
+                        entry.attr = '/* MISSING */'
             
     def add_missing(self,other):
         missing = defaultdict(list)
@@ -129,9 +154,14 @@ class Localizations:
 
     def describe_change(self):
         msgs = [ '{} keys'.format( len(self.translations ) )]
+        changed = False
         if len( self.added ):
             msgs.append( '{} added'.format( len(self.added) ) )
-        else:
+            changed = True
+        if len( self.deleted ):
+            msgs.append( '{} deleted'.format( len(self.deleted) ) )
+            changed = True
+        if not changed:
             msgs.append( 'unchanged' )
             
         msgs.append( '{} comments'.format( len(self.comments) ) )
@@ -185,6 +215,11 @@ class Driver:
                 en = self.read_strings(dir, 'Localizable.strings' )
                 print( f'Read {dir} {en.describe()}' )
                 en.add_missing( base )
+                en.find_deleted( base, self.args.remove )
+                if self.args.native:
+                    isnative = (dir == '{}.lproj'.format( self.args.native ) )
+                    print( '{} {} {}'.format( isnative,dir, '{}.lproj'.format( self.args.native ) ) )
+                    en.mark_translation(isnative)
                 print( f'Merged base {en.describe_change()}' )
                 fh = open( os.path.join(dir, fn ), 'w', encoding='utf8' )
                 en.write_to_file(fh)
@@ -242,6 +277,8 @@ if __name__ == "__main__":
     parser.add_argument( '-c', '--clear', action='store_true', help='clear existing attributes' )
     parser.add_argument( '-s', '--save', action='store_true', help='save output otherwise just print' )
     parser.add_argument( '-o', '--output', help='output file' )
+    parser.add_argument( '-n', '--native', default='', help='native language, will mark translation for that language')
+    parser.add_argument( '-r', '--remove', action='store_true', help='remove deleted entries' )
     parser.add_argument( '-v', '--verbose', action='store_true', help='verbose output' )
     parser.add_argument( 'files',    metavar='FILES', nargs='*', help='files to process' )
     args = parser.parse_args()
