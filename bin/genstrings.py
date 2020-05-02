@@ -26,6 +26,7 @@
 
 import argparse
 import os
+import subprocess
 import re
 import pprint
 from collections import defaultdict
@@ -99,7 +100,6 @@ class Localizations:
 
     def find_deleted(self,other,remove=False):
         remain = []
-        
         for entry in self.localizations:
             if entry.key not in other.translations:
                 self.deleted[entry.key] = entry
@@ -120,7 +120,12 @@ class Localizations:
                 else:
                     if entry.key == entry.translation:
                         entry.attr = '/* MISSING */'
-            
+
+    def mark_clear(self):
+        for entry in self.localizations:
+            entry.attr = None
+        
+                        
     def add_missing(self,other):
         missing = defaultdict(list)
 
@@ -199,20 +204,34 @@ class Localizations:
 class Driver:
     def __init__(self,args):
         self.args = args
-        
+
+    def cmd_difftool(self):
+        self.process('Localizable-new.strings')
+        dirs = os.listdir( '.' )
+        for dir in dirs:
+            if dir.endswith( '.lproj' ) and len(dir) == len('en.lproj' ):
+                subprocess.call( [ 'ksdiff', '--partial-changeset', os.path.join(dir,'Localizable.strings'), os.path.join(dir,'Localizable-new.strings') ]  )
+
+
     def cmd_build(self):
-        self.run_genstrings()
-        base = self.read_strings( 'base.lproj' )
+        if self.args.save:
+            fn = 'Localizable.strings'
+        else:
+            fn = 'Localizable-new.strings'
+
+        self.process(fn)
+
+    def process(self,fn):
+        self.run_genstrings(self.args.srcdir)
+        base = self.read_strings( os.path.join('base.lproj','Localizable.strings') )
 
         dirs = os.listdir( '.' )
         for dir in dirs:
             if dir.endswith( '.lproj' ) and len(dir) == len('en.lproj' ):
-                if self.args.save:
-                    fn = 'Localizable.strings'
-                else:
-                    fn = 'Localizable-new.strings'
-                
-                en = self.read_strings(dir, 'Localizable.strings' )
+                en = self.read_strings( os.path.join(dir,'Localizable.strings') )
+                if self.args.clear:
+                    print( f'Clearing marks for {dir}' )
+                    en.mark_clear()
                 print( f'Read {dir} {en.describe()}' )
                 en.add_missing( base )
                 en.find_deleted( base, self.args.remove )
@@ -225,14 +244,14 @@ class Driver:
                 en.write_to_file(fh)
                 print( f'Saved {dir}/{fn} {en.describe()}' )
         
-    def run_genstrings(self,path='src'):
-        os.system( "genstrings -q -o base.lproj $(find {} -name '*.m' -o -name '*.swift')".format( path ) )
+                
+    def run_genstrings(self,path=['src']):
+        os.system( "genstrings -q -o base.lproj $(find {} -name '*.m' -o -name '*.swift')".format( ' '.join(path) ) )
         os.rename( 'base.lproj/Localizable.strings', 'base.lproj/Localizable.strings.utf16' )
         os.system( 'iconv -f UTF-16 -t UTF-8 "{}" > "{}"'.format( 'base.lproj/Localizable.strings.utf16', 'base.lproj/Localizable.strings' ) )
         
-    def read_strings(self,dirname,fn='Localizable.strings'):
-        fname = os.path.join(dirname,fn)
-        f = open(fname, 'r')
+    def read_strings(self,fpath):
+        f = open(fpath, 'r')
 
         line = f.readline()
         localizations = Localizations()
@@ -263,11 +282,11 @@ class Driver:
         f.close()
         return localizations
 
-
 if __name__ == "__main__":
                 
     commands = {
         'build':{'attr':'cmd_build','help':'Rebuild database'},
+        'difftool':{'attr':'cmd_difftool','help':'Rebuild and diff changes'},
     }
 
     description = "\n".join( [ '  {}: {}'.format( k,v['help'] ) for (k,v) in commands.items() ] )
@@ -280,7 +299,7 @@ if __name__ == "__main__":
     parser.add_argument( '-n', '--native', default='', help='native language, will mark translation for that language')
     parser.add_argument( '-r', '--remove', action='store_true', help='remove deleted entries' )
     parser.add_argument( '-v', '--verbose', action='store_true', help='verbose output' )
-    parser.add_argument( 'files',    metavar='FILES', nargs='*', help='files to process' )
+    parser.add_argument( 'srcdir',    metavar='SRCDIR', nargs='*', default='src', help='Directory where to search for source files' )
     args = parser.parse_args()
 
     command = Driver(args)
