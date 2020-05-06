@@ -295,7 +295,6 @@ if __name__ == "__main__":
     parser.add_argument( 'command', metavar='Command', help='command to execute:\n' + description)
     parser.add_argument( '-c', '--clear', action='store_true', help='clear existing attributes' )
     parser.add_argument( '-s', '--save', action='store_true', help='save output otherwise just print' )
-    parser.add_argument( '-o', '--output', help='output file' )
     parser.add_argument( '-n', '--native', default='', help='native language, will mark translation for that language')
     parser.add_argument( '-r', '--remove', action='store_true', help='remove deleted entries' )
     parser.add_argument( '-v', '--verbose', action='store_true', help='verbose output' )
