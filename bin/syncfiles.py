@@ -27,6 +27,7 @@
 import sys
 import subprocess
 import os
+import distutils.spawn
 import hashlib
 import argparse
 import json
@@ -385,11 +386,24 @@ class Config :
             fns(x)
 
     def cmd_difftool(self):
+        tool = None
+        if self.args.difftool == 'auto':
+            if distutils.spawn.find_executable( 'ksdiff' ):
+                tool = ['ksdiff', '--partial-changeset']
+            else:
+                tool = ['vimdiff']
+        elif self.args.difftool.startswith( 'k' ):
+                tool = ['ksdiff', '--partial-changeset']
+        elif self.args.difftool.startswith( 'v' ):
+                tool = ['vimdiff']
+            
         exists = [ x for x in self.list_file_pairs() if x.src_file_exists() ]
         for x in exists:
             if not x.is_match():
                 print( self.format_status(x) )
-                subprocess.call( [ 'ksdiff', '--partial-changeset', x.dir_file(), x.src_file() ]  )
+                process_arg = tool + [ x.dir_file(), x.src_file() ]
+
+                subprocess.call( process_arg )
 
     def cmd_diff(self):
         exists = [ x for x in self.list_file_pairs() if x.src_file_exists() ]
@@ -419,6 +433,7 @@ if __name__ == "__main__":
     parser.add_argument( 'command', metavar='Command', help='command to execute:\n' + description)
     parser.add_argument( '-e', '--execute', action='store_true', help='actually execute the commands otherwise just print' )
     parser.add_argument( '-v', '--verbose', action='store_true', help='verbose output' )
+    parser.add_argument( '-t', '--difftool', choices=['auto','vimdiff','ksdiff'], default='auto' )
     parser.add_argument( 'files',    metavar='FILES', nargs='*' )
     args = parser.parse_args()
 
