@@ -169,10 +169,13 @@ class Driver:
         pprint( devices[:count] )
         
     def cmd_dir(self):
-        devices = self.simdata.sorted_list(self.args.name, self.args.system )
-        if len(devices):
-            found = self.simdata.get_app_container(devices[0],self.args.app[0])
-            print( found )
+        if len(self.args.app) < 1:
+            print( 'No app identifier provided' )
+        else:
+            devices = self.simdata.sorted_list(self.args.name, self.args.system )
+            if len(devices):
+                found = self.simdata.get_app_container(devices[0],self.args.app[0])
+                print( found )
 
                 
     
