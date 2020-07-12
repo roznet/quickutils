@@ -96,8 +96,6 @@ This utility is a wrapper around the `genstrings` utility provided by `xcode` to
 
 ## Usage
 
-
-
 ```
 usage: genstrings.py [-h] [-c] [-s] [-n NATIVE] [-r] [-v] Command [SRCDIR [SRCDIR ...]]
 
@@ -118,3 +116,9 @@ optional arguments:
   -r, --remove          remove deleted entries
   -v, --verbose         verbose output
 ```
+
+# simctl.py
+
+This is a simple wrapper around xcrun to access information about simulators
+
+

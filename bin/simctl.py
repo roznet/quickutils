@@ -78,14 +78,17 @@ class SimData:
 
     def get_app_container(self,device,app,which='data'):
         found = None
-        if device['isAvailable']:
+        if device['isAvailable'] and device['state'] != 'Shutdown':
             cmd = ['xcrun', 'simctl', 'get_app_container', device['udid'], app, which]
             if self.verbose:
-                print( f'Running {cmd}' )
-            out = subprocess.Popen( cmd , stdout= subprocess.PIPE, stderr=subprocess.STDOUT )
-            (path,out) = out.communicate()
-            found = path.decode('utf-8').rstrip()
-        else:
+                print( f'cRunning {cmd}' )
+            try:
+                out = subprocess.Popen( cmd , stdout= subprocess.PIPE, stderr=subprocess.STDOUT )
+                (path,out) = out.communicate()
+                found = path.decode('utf-8').rstrip()
+            except:
+                found = None
+        if not found:
             findpath = os.path.join(device['dataPath'],'Containers')
             if os.path.isdir( findpath ):
                 cmd =['find', findpath, '-name', f'.simneedle.{app}']
