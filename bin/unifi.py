@@ -22,6 +22,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 #  SOFTWARE.
 #  
+#  API info https://ubntwiki.com/products/software/unifi-controller/api
 #
 import argparse
 import re
@@ -135,6 +136,16 @@ class UnifiController(object):
         self.post( "/api/s/{site}/group/user", pydata=jsondata )
         pprint(self.json())
 
+    def list_port_forward(self):
+        self.get("/api/s/{site}/rest/portforward/")
+        return self.json()
+    
+    def change_port_forward(self,putdata):
+        if '_id' in putdata:
+            self.put("/api/s/{site}/rest/portforward/" + putdata['_id'], putdata)
+            return self.json()
+        return None
+        
     def list_known_devices(self):
         self.get("/api/s/{site}/stat/device/")
         return self.json()
@@ -337,7 +348,37 @@ class Command :
             else:
                 print( mac )
 
+    def cmd_port_forward(self):
+        unifi = UnifiController()
+        unifi.login()
+
+        ports = unifi.list_port_forward()
+
+        if len( args.args ) > 0:
+            name = args.args[0]
+        else:
+            name = None
+
+        if len( args.args ) > 1:
+            enable = args.args[1]
+        else:
+            enable = None
             
+        for port in ports:
+            if not name or name in port['name']:
+                pprint( port )
+                put = None
+                if enable and enable == 'on':
+                    print( f"turning {port['name']} ON" )
+                    put = port.copy()
+                    put['enabled'] = True
+                if enable and enable == 'off':
+                    print( f"turning {port['name']} OFF" )
+                    put = port.copy()
+                    put['enabled'] = False
+                if put:
+                    print( f'PUT: {put}' )
+                    unifi.change_port_forward(put)
         
 if __name__ == "__main__":
 
@@ -345,7 +386,8 @@ if __name__ == "__main__":
         'devices': {'attr':'cmd_list_devices','help':'List devices from the unifi controller' },
         'clients': {'attr':'cmd_list_clients','help':'List clients from the unifi controller' },
         'pull': {'attr':'cmd_pull_to_network','help':'Get clients list from controller and merge new clients into local json file' },
-        'push': {'attr':'cmd_push_to_unifi','help':'Update names on the controller from the local database'}
+        'push': {'attr':'cmd_push_to_unifi','help':'Update names on the controller from the local database'},
+        'portforward': {'attr':'cmd_port_forward','help':'List port forwards, [NAME [on|off]] to filter and toggle'}
     }
 
     description = "\n".join( [ '  {}: {}'.format( k,v['help'] ) for (k,v) in commands.items() ] )
