@@ -400,10 +400,14 @@ class Config :
         if self.args.difftool == 'auto':
             if distutils.spawn.find_executable( 'ksdiff' ):
                 tool = ['ksdiff', '--partial-changeset']
+            elif distutils.spawn.find_executable( 'icdiff' ):
+                tool = ['icdiff']
             else:
                 tool = ['vimdiff']
         elif self.args.difftool.startswith( 'k' ):
                 tool = ['ksdiff', '--partial-changeset']
+        elif self.args.difftool.startswith( 'i'):
+                tool = ['icdiff']
         elif self.args.difftool.startswith( 'v' ):
                 tool = ['vimdiff']
             
@@ -431,7 +435,7 @@ if __name__ == "__main__":
         'status':{'attr':'cmd_status','help':'Show status of files'},
         'install':{'attr':'cmd_install','help':'Copy all the missing files to source'},
         'diff':{'attr':'cmd_diff','help':'Show diff for modified files'},
-        'difftool':{'attr':'cmd_difftool','help':'Show diff for modified files in ksdiff'},
+        'difftool':{'attr':'cmd_difftool','help':'Show diff for modified files in ksdiff or vimdiff'},
         'sync':{'attr':'cmd_sync','help':'copy most recent files to older one'},
         'pull':{'attr':'cmd_pull','help':'copy to local the original files'},
         'push':{'attr':'cmd_push','help':'push local file to the original location'}
