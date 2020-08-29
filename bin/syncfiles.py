@@ -34,6 +34,7 @@ import json
 from pprint import pprint
 import shutil
 import fnmatch
+import platform
 
 def file_hash(filepath):
     openedFile = open(filepath)
@@ -95,7 +96,8 @@ class Config :
                     print( 'Found {} base={}'.format(candidate,self.basedir) )
                 config_file = open( candidate, 'r' )
                 self.defs = json.load( config_file )
-
+                self.validate_config()
+                
                 found = True
             else:
                 cwdcomponents = cwdcomponents[:-1]
@@ -104,6 +106,14 @@ class Config :
             print( "Couldn't locate a .syncfile" )
             sys.exit( 1 )
 
+    def validate_config(self):
+        valid = True
+        if 'validate' in self.defs:
+            valid = eval( self.defs['validate'] )
+            if not valid:
+                print( 'WARNING: validation of this config failed "{}" is not True'.format( self.defs['validate'] ) )
+        return valid
+    
     def expand_dirs(self):
         '''
           Find all the source dir and destination dir relevant from the config file
