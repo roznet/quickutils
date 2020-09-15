@@ -111,7 +111,17 @@ class Config :
         if 'validate' in self.defs:
             valid = eval( self.defs['validate'] )
             if not valid:
-                print( 'WARNING: validation of this config failed "{}" is not True'.format( self.defs['validate'] ) )
+                if not self.args.force:
+                    print( 'Skipping, Validation "{}" evaluates to False'.format( self.defs['validate'] ) )
+                    sys.stdout.flush()
+                    os._exit(0)
+                else:
+                    if self.verbose:
+                        print( 'WARNING: validation "{}" evaluates to False'.format( self.defs['validate'] ) )
+            else:
+                if self.verbose:
+                    print( 'CONTINUE: Validation "{}" evaluates to True'.format( self.defs['validate'] ) );
+                    
         return valid
     
     def expand_dirs(self):
@@ -246,7 +256,7 @@ class Config :
 
                 if self.should_ignore( full_dir_file ):
                     if self.verbose:
-                        print( "Ignoring file %s" %(full_dir_file,) )
+                        print( "IGNORE: file %s" %(full_dir_file,) )
                     continue
 
                 if os.path.isdir( full_dir_file ):
@@ -257,7 +267,7 @@ class Config :
                 else:
                     if full_dir_file in self.expand_dir_to_src:
                         if self.verbose:
-                            print( "skip source %s" %(full_dir_file,) )
+                            print( "SKIP: source %s" %(full_dir_file,) )
                     else:
                         pair = FilePair( dir, src, rel_file )
                         self.max_len_dir = max(self.max_len_dir, len(self.display_dir_file(pair)))
@@ -286,9 +296,15 @@ class Config :
         else:
             return os.path.join( src_path, filepair.file_rel_path).ljust(self.max_len_src,' ')
         
-        
+
+    def output_status(self, file_pair ):
+        status = self.format_status( file_pair );
+        if status:
+            print( status );
+
+        return status
+            
     def format_status(self, filepair ):
-        
         if filepair.src_file_exists():
             if not filepair.src_is_readable():
                 return '! %s   %s' %(self.display_dir_file(filepair), self.display_src_file(filepair) )
@@ -296,7 +312,10 @@ class Config :
                 return 'A %s   %s' %(self.display_dir_file(filepair), self.display_src_file(filepair) )
             else:
                 if filepair.is_match():
-                    return '. %s = %s' %(self.display_dir_file(filepair), self.display_src_file(filepair) )
+                    if self.args.all:
+                        return '. %s = %s' %(self.display_dir_file(filepair), self.display_src_file(filepair) )
+                    else:
+                        return '';
                 else:
                     return 'M %s %s %s' %(self.display_dir_file(filepair), self.display_compare_dir_src(filepair), self.display_src_file(filepair) )
         else:
@@ -383,11 +402,16 @@ class Config :
         exists = [ x for x in self.list_file_pairs() if x.src_file_exists() ]
         unknown = [ x for x in self.list_file_pairs() if not x.src_file_exists() ]
 
+        done = False
         for x in exists:
-            print( self.format_status(x) )
-        print
+            if self.output_status(x):
+                done = True;
+
         for x in unknown:
-            print( self.format_status(x) )
+            if self.output_status(x):
+                done = True;
+        if not done and not self.args.all:
+            print( 'All up to date' )
 
 
     def cmd_apply(self,fns):
@@ -414,7 +438,7 @@ class Config :
         exists = [ x for x in self.list_file_pairs() if x.src_file_exists() ]
         for x in exists:
             if not x.is_match():
-                print( self.format_status(x) )
+                self.output_status(x)
                 process_arg = tool + [ x.dir_file(), x.src_file() ]
 
                 subprocess.call( process_arg )
@@ -426,7 +450,7 @@ class Config :
             if not x.src_is_readable():
                 continue
             if not x.is_match():
-                print( self.format_status(x) )
+                self.output_status(x)
                 subprocess.call( [ 'diff', x.dir_file(), x.src_file() ]  )
 
 if __name__ == "__main__":
@@ -445,6 +469,8 @@ if __name__ == "__main__":
     
     parser = argparse.ArgumentParser( description='Check configuration', formatter_class=argparse.RawTextHelpFormatter )
     parser.add_argument( 'command', metavar='Command', help='command to execute:\n' + description)
+    parser.add_argument( '-a', '--all', action='store_true', help='Show all files including those unchanged', default=False )
+    parser.add_argument( '-f', '--force', action='store_true', help='run even if validate is false', default=False )
     parser.add_argument( '-e', '--execute', action='store_true', help='actually execute the commands otherwise just print' )
     parser.add_argument( '-v', '--verbose', action='store_true', help='verbose output' )
     parser.add_argument( '-t', '--difftool', choices=['auto','vimdiff','ksdiff'], default='auto' )
