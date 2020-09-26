@@ -37,21 +37,28 @@ import fnmatch
 import platform
 
 def file_hash(filepath):
-    openedFile = open(filepath)
+    openedFile = open(filepath, 'rb')
     readFile = openedFile.read()
 
-    hash = hashlib.sha1(readFile.encode('utf-8'))
+    hash = hashlib.sha1(readFile)
     return hash.hexdigest()
 
 
 class FilePair :
     def __init__(self,dir,src_dir,file_rel_path):
+        '''
+        FilePair Object:
+
+        dir: directory where the file is stored in git/sync repo (ex: /path/to/syncfiles/etc/apache2)
+        src_dir: directory where the file is supposed to be (ex: /etc/apache2)
+        file_rel_path: rel path inside dir and src_dir (ex: sites/default.conf )
+        '''
         self.dir = dir
         self.src = src_dir
         self.file_rel_path = file_rel_path
 
     def __repr__(self):
-        return '%s (%s %s)' %( self.file_rel_path, self.dir, self.src )
+        return 'FilePair: %s (%s %s)' %( self.file_rel_path, self.dir, self.src )
 
     def src_file(self):
         return os.path.join( self.src, self.file_rel_path )
@@ -92,8 +99,6 @@ class Config :
             candidate = os.path.join( '/'.join(cwdcomponents), '.syncfiles' )
             if os.path.isfile(candidate):
                 self.basedir = '/'.join(cwdcomponents)
-                if self.verbose:
-                    print( 'Found {} base={}'.format(candidate,self.basedir) )
                 config_file = open( candidate, 'r' )
                 self.defs = json.load( config_file )
                 self.validate_config()
@@ -101,10 +106,20 @@ class Config :
                 found = True
             else:
                 cwdcomponents = cwdcomponents[:-1]
-
+                
         if found is False:
             print( "Couldn't locate a .syncfile" )
             sys.exit( 1 )
+
+        self.git_root = None
+        
+        if not self.args.nogit:
+            git_root_out = subprocess.run( ['git', 'rev-parse', '--show-toplevel'], capture_output=True)
+            if git_root_out.returncode == 0:
+                self.git_root = git_root_out.stdout.decode( 'utf-8' ).splitlines()[0]
+
+        if self.verbose:
+            print( 'CONFIG: {} base={} git={}'.format(candidate,self.basedir, self.git_root ) )
 
     def validate_config(self):
         valid = True
@@ -161,13 +176,14 @@ class Config :
                 else:
                     self.ignore_pattern[ dir ] = 1
 
-    def should_ignore(self,filepath):
-        if filepath in self.ignore_map:
-            return True
-        else:
-            for pattern in self.ignore_pattern:
-                if fnmatch.fnmatch( filepath, pattern ):
-                    return True
+    def should_ignore(self,filepath,rel_file):
+        for ignore_path in self.ignore_map:
+            if filepath.startswith( ignore_path ):
+                return True
+
+        for pattern in self.ignore_pattern:
+            if fnmatch.fnmatch( filepath, pattern ):
+                return True
 
         return False
             
@@ -243,18 +259,20 @@ class Config :
 
         file_pairs = []
         for (dir,src) in self.expand_dir_to_src.items():
+            if self.verbose:
+                print( 'LOOK: dir={} src={}'.format( dir, src ) )
             search_dir = dir if rel_dir is None else os.path.join(dir, rel_dir )
             if rel_src and rel_src != src:
                 continue
             if not os.path.isdir( search_dir ):
                 continue
             dir_files = os.listdir( search_dir )
+
             for dir_file in dir_files:
                 rel_file = dir_file if rel_dir is None else os.path.join(rel_dir, dir_file)
                 full_dir_file = os.path.join(search_dir,dir_file)
 
-
-                if self.should_ignore( full_dir_file ):
+                if self.should_ignore( full_dir_file, rel_file ):
                     if self.verbose:
                         print( "IGNORE: file %s" %(full_dir_file,) )
                     continue
@@ -270,13 +288,48 @@ class Config :
                             print( "SKIP: source %s" %(full_dir_file,) )
                     else:
                         pair = FilePair( dir, src, rel_file )
+                        print( pair )
                         self.max_len_dir = max(self.max_len_dir, len(self.display_dir_file(pair)))
                         self.max_len_src = max(self.max_len_src, len(self.display_src_file(pair)))
                         file_pairs += [ pair ]
         return file_pairs
 
+
+    def construct_git_pairs(self):
+        file_pairs = []
+        cmd = [ 'git', 'ls-files' ]
+        if self.args.files:
+            cmd += self.args.files
+        git_ls_out = subprocess.run( cmd, capture_output=True)
+        if git_ls_out.returncode == 0:
+            files = git_ls_out.stdout.decode( 'utf-8' ).splitlines()
+
+        for one in files:
+            full_path_file = os.path.join( os.getcwd(), one )
+            found_dir = None
+            for (repo_dir,src_dir) in self.expand_dir_to_src.items():
+                if full_path_file.startswith( repo_dir ) and ( found_dir is None or len(found_dir) < len( repo_dir) ):
+                    found_dir = repo_dir
+            if found_dir:
+                # in repo (+1 for the /)
+                file_rel_path = full_path_file[ len(found_dir)+1: ]
+
+                if self.should_ignore( full_path_file, file_rel_path ):
+                    if self.verbose:
+                        print( "IGNORE: file {}".format( full_path_file ) )
+                    continue
+
+                pair = FilePair(found_dir, self.expand_dir_to_src[found_dir], file_rel_path);
+                self.max_len_dir = max(self.max_len_dir, len(self.display_dir_file(pair)))
+                self.max_len_src = max(self.max_len_src, len(self.display_src_file(pair)))
+                file_pairs += [ pair ]
+                
+        return file_pairs
+    
     def list_file_pairs(self):
-        if self.args and self.args.files:
+        if self.git_root:
+            return self.construct_git_pairs()
+        elif self.args and self.args.files:
             return self.construct_file_pairs(self.args.files)
         else:
             return self.discover_file_pairs()
@@ -474,6 +527,7 @@ if __name__ == "__main__":
     parser.add_argument( '-e', '--execute', action='store_true', help='actually execute the commands otherwise just print' )
     parser.add_argument( '-v', '--verbose', action='store_true', help='verbose output' )
     parser.add_argument( '-t', '--difftool', choices=['auto','vimdiff','ksdiff'], default='auto' )
+    parser.add_argument( '--nogit', action='store_true', help='always search files without git', default=False )
     parser.add_argument( 'files',    metavar='FILES', nargs='*' )
     args = parser.parse_args()
 
