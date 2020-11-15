@@ -214,33 +214,56 @@ class Driver:
 
     def cmd_upgrade(self):
         l = self.simdata.version_by_name()
+        count = int(self.args.count) if self.args.count else 2
+
+        # name(iphone 11, ipad, ...), devices: array of all devices version for that name (ios14, ios13.2, ...)
         for (name,devices) in l.items():
-            if len(devices)>1:
+            if len(devices):
                 if self.args.name and name != self.args.name:
                     continue
                 bundles = defaultdict(list)
-                for device in devices[-2:]:
+                # find all application bundle data directory for device
+                for device in devices:
                     containers = self.simdata.list_containers( device )
                     for bundle,info in containers.items():
                         bundles[bundle].append( info )
                 if len(bundles):
                     print( f'{name} has app to upgrade' )
+                    for bundle,infos in bundles.items():
+                        if self.args.app:
+                            if bundle not in self.args.app:
+                                continue
 
-                    for bundle,info in bundles.items():
-                        if len(info) > 1:
-                            device_from = info[0]['device']
-                            device_to   = info[1]['device']
-                            name_from = device_from['runtime']['name']
-                            name_to   = device_to['runtime']['name']
-                            files_from = info[0]['files']
-                            files_to = info[1]['files']
-                            
-                            print( f'  {bundle} : {name_from}[{files_from}] -> {name_to}[{files_to}]' )
-                        if len(info) == 1:
-                            device_from = info[0]['device']
-                            name_from = device_from['runtime']['name']
-                            files_from = info[0]['files']
-                            print( f'  {bundle} : {name_from}[{files_from}] ' )
+                        summaries = []
+
+                        print( '  {}:'.format(bundle) )
+                        # if more than one device, look for source
+                        if len(infos) > 1:
+                            foundavailable = False
+                            for info in reversed(infos):
+                                if not foundavailable:
+                                    if info['device']['isAvailable']:
+                                        foundavailable = True
+                                else:
+                                    info['source'] = True
+                                    break
+
+                        for info in infos:
+                            prefix = ' '
+                            if info['device']['isAvailable']:
+                                prefix = '>'
+                            if 'source' in info:
+                                prefix = '*'
+                            one = '{}{}[{}]'.format( prefix, info['device']['runtime']['name'], info['files'] )
+                            summaries.append( one )
+                            print( '    {:16} : {}'.format( one, info['container'] ) )
+                                              
+                        if len(infos) > 1:
+                            device_from = infos[0]['device']
+                            device_to   = infos[1]['device']
+                            files_from = infos[0]['container']
+                            files_to = infos[1]['container']
+                                              
                             
         
     def cmd_dir(self):
