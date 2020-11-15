@@ -27,13 +27,15 @@
 import sys
 import subprocess
 import os
-import distutils.spawn
+from distutils import version
 import hashlib
 import argparse
 import json
 from pprint import pprint
 import shutil
 import fnmatch
+from collections import defaultdict
+
 try:
     from fuzzywuzzy import fuzz
 except:
@@ -76,6 +78,25 @@ class SimData:
             print( f'Found {k} devices' )
         self.filter = filter
 
+    def list_containers(self,device):
+        rv = dict()
+        findpath = os.path.join(device['dataPath'], 'Containers' )
+        if os.path.isdir( findpath ):
+            cmd =['find', findpath, '-name', '.simneedle.*']
+            if self.verbose:
+                print( f'Running {cmd}' )
+            out = subprocess.Popen( cmd, stdout= subprocess.PIPE, stderr=subprocess.STDOUT )
+            (found,out) = out.communicate()
+            paths = found.decode('utf-8').split('\n' )
+            for path in paths:
+                bundle = os.path.basename( path )[ len('.simneedle.'): ]
+                documentpath = os.path.dirname( path )
+                containerpath = os.path.dirname( documentpath )
+                if bundle:
+                    rv[bundle] = {'device': device, 'bundle':bundle,'container':containerpath,'files':len( os.listdir( documentpath ) ) }
+        return rv
+        
+        
     def get_app_container(self,device,app,which='data'):
         found = None
         if device['isAvailable'] and device['state'] != 'Shutdown':
@@ -113,11 +134,19 @@ class SimData:
 
 
     def list(self,searchname=None,searchruntime=None):
+        to_sort = []
+        
         for (runtimeid,devices) in self.simdata['devices'].items():
             runtime = self.getruntime( runtimeid )
             for device in devices:
                 if self.filter.valid( runtime, device ):
-                    print( '{}: {} {}'.format(runtime['name'], device['name'],'[Booted]' if device['state'] == 'Booted' else '' ) )
+                    to_sort.append( (runtime,device) )
+        if self.args.group[0] == 'v':
+            to_sort.sort( key = lambda x: version.LooseVersion( x[0]['version'] ) )
+        else:
+            to_sort.sort( key = lambda x: (x[1]['name'], version.LooseVersion( x[0]['version'] ) ) )
+        for (runtime,device) in to_sort:
+            print( '{}: {} {}'.format(runtime['name'], device['name'],'[Booted]' if device['state'] == 'Booted' else '' ) )
 
     def sorted_list(self,searchname,searchruntime):
         rv = []
@@ -137,8 +166,20 @@ class SimData:
                 
         rv.sort( key=lambda k: (k['searchnameratio'], k['runtimeratio'], 1 if k['state'] == 'Booted' else 0, k['runtime']['version']), reverse=True )
         return rv
-  
-                    
+
+
+    def version_by_name(self):
+        rv = defaultdict(list)
+        for (runtimeid,devices) in self.simdata['devices'].items():
+            runtime = self.getruntime( runtimeid )
+            for device in devices:
+                device['runtime'] = runtime
+                rv[ device['name'] ].append( device )
+        for (name,devices) in rv.items():
+            devices.sort( key=lambda x: version.LooseVersion( x['runtime']['version'] ) )
+        return rv
+        
+    
     def find(self,searchname,searchruntime):
         exactmatch = None
         fuzzymatch = []
@@ -170,6 +211,37 @@ class Driver:
         devices = self.simdata.sorted_list(self.args.name, self.args.system )
         count = int(self.args.count) if self.args.count else 1
         pprint( devices[:count] )
+
+    def cmd_upgrade(self):
+        l = self.simdata.version_by_name()
+        for (name,devices) in l.items():
+            if len(devices)>1:
+                if self.args.name and name != self.args.name:
+                    continue
+                bundles = defaultdict(list)
+                for device in devices[-2:]:
+                    containers = self.simdata.list_containers( device )
+                    for bundle,info in containers.items():
+                        bundles[bundle].append( info )
+                if len(bundles):
+                    print( f'{name} has app to upgrade' )
+
+                    for bundle,info in bundles.items():
+                        if len(info) > 1:
+                            device_from = info[0]['device']
+                            device_to   = info[1]['device']
+                            name_from = device_from['runtime']['name']
+                            name_to   = device_to['runtime']['name']
+                            files_from = info[0]['files']
+                            files_to = info[1]['files']
+                            
+                            print( f'  {bundle} : {name_from}[{files_from}] -> {name_to}[{files_to}]' )
+                        if len(info) == 1:
+                            device_from = info[0]['device']
+                            name_from = device_from['runtime']['name']
+                            files_from = info[0]['files']
+                            print( f'  {bundle} : {name_from}[{files_from}] ' )
+                            
         
     def cmd_dir(self):
         if len(self.args.app) < 1:
@@ -179,8 +251,6 @@ class Driver:
             if len(devices):
                 found = self.simdata.get_app_container(devices[0],self.args.app[0])
                 print( found )
-
-                
     
 if __name__ == "__main__":
                 
@@ -189,12 +259,14 @@ if __name__ == "__main__":
         'info':{'attr':'cmd_info','help':'List info on devices'},
         'find':{'attr':'cmd_find','help':'find device'},
         'dir':{'attr':'cmd_dir','help':'dir for top device'},
+        'upgrade':{'attr':'cmd_upgrade','help':'upgrade app containers'},
     }
 
     description = "\n".join( [ '  {}: {}'.format( k,v['help'] ) for (k,v) in commands.items() ] )
 
     parser = argparse.ArgumentParser( description='Wrapper around xcrun simctl', formatter_class=argparse.RawTextHelpFormatter )
     parser.add_argument( 'command', metavar='Command', help='command to execute:\n' + description)
+    parser.add_argument( '-g', '--group', help='Group list by [device|version]', default='version' )
     parser.add_argument( '-b', '--booted', action='store_true', help='only booted' )
     parser.add_argument( '-v', '--verbose', action='store_true', help='verbose' )
     parser.add_argument( '-s', '--system', help='system runtime to use as filter [ios 13.5, ..]' )
