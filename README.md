@@ -119,6 +119,10 @@ optional arguments:
 
 # simctl.py
 
-This is a simple wrapper around xcrun to access information about simulators
+This helps workflow around finding files in the simulator. It uses andcomplements `simctl` provided by apple. In addition, if you add a small snippet of code to your apps to save a small hidden file in the documents directory on startup, it will also help finding old simulator, which can be very handy when we need to move files from one version to the other, when Xcode upgrades for instance.
+
+## Adding a needle to find the folders
+
+Using the same idea as [Simulator Data Finder](https://github.com/roznet/iossimfinder), once you add a snippet of code that sames a file `.simneedle.{bundleIdentifier}`
 
 

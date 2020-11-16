@@ -27,6 +27,7 @@
 import sys
 import subprocess
 import os
+import time
 from distutils import version
 import hashlib
 import argparse
@@ -38,7 +39,9 @@ from collections import defaultdict
 
 try:
     from fuzzywuzzy import fuzz
+    print( 'yo' )
 except:
+    print( 'no yo' )
     class fuzz:
         def ratio( s1, s2 ):
             if s1 in s2:
@@ -89,11 +92,14 @@ class SimData:
             (found,out) = out.communicate()
             paths = found.decode('utf-8').split('\n' )
             for path in paths:
-                bundle = os.path.basename( path )[ len('.simneedle.'): ]
-                documentpath = os.path.dirname( path )
-                containerpath = os.path.dirname( documentpath )
-                if bundle:
-                    rv[bundle] = {'device': device, 'bundle':bundle,'container':containerpath,'files':len( os.listdir( documentpath ) ) }
+                if path:
+                    bundle = os.path.basename( path )[ len('.simneedle.'): ]
+                    mtime = time.localtime(os.path.getmtime(path))
+
+                    documentpath = os.path.dirname( path )
+                    containerpath = os.path.dirname( documentpath )
+                    if bundle:
+                        rv[bundle] = {'device': device, 'bundle':bundle,'mtime':mtime,'path':containerpath,'files':len( os.listdir( documentpath ) ) }
         return rv
         
         
@@ -228,13 +234,18 @@ class Driver:
                     for bundle,info in containers.items():
                         bundles[bundle].append( info )
                 if len(bundles):
-                    print( f'{name} has app to upgrade' )
+                    headerprinted = False
                     for bundle,infos in bundles.items():
+                        if len(infos) < 2:
+                            continue
                         if self.args.app:
                             if bundle not in self.args.app:
                                 continue
 
                         summaries = []
+                        if not headerprinted:
+                            print( f'{name} has app to upgrade' )
+                            headerprinted = True
 
                         print( '  {}:'.format(bundle) )
                         # if more than one device, look for source
@@ -248,21 +259,32 @@ class Driver:
                                     info['source'] = True
                                     break
 
-                        for info in infos:
+                        useinfos = infos
+
+                        pathfrom = None
+                        pathto   = None
+                        if self.args.count:
+                            useinfos = infos[ - int(self.args.count) :]
+                        for info in useinfos:
                             prefix = ' '
                             if info['device']['isAvailable']:
+                                pathto = info['path']
                                 prefix = '>'
                             if 'source' in info:
+                                pathfrom = info['path']
                                 prefix = '*'
-                            one = '{}{}[{}]'.format( prefix, info['device']['runtime']['name'], info['files'] )
+                            one = '{}{}[{}: {}]'.format( prefix, info['device']['runtime']['name'], time.strftime('%b %Y', info['mtime']), info['files'] )
                             summaries.append( one )
-                            print( '    {:16} : {}'.format( one, info['container'] ) )
+                            if self.args.path:
+                                print( '    {:26} : {}'.format( one, info['path'] ) )
+                            else:
+                                print( '    {:26} '.format( one ) )
                                               
-                        if len(infos) > 1:
-                            device_from = infos[0]['device']
-                            device_to   = infos[1]['device']
-                            files_from = infos[0]['container']
-                            files_to = infos[1]['container']
+                        if pathfrom and pathto:
+                            print( 'Command to execute:' )
+                            print()
+                            print( f"find {pathfrom}/Documents -type f -not -name '.*' | xargs -J % mv -f % {pathto}/Documents" )
+                            print()
                                               
                             
         
@@ -295,6 +317,7 @@ if __name__ == "__main__":
     parser.add_argument( '-s', '--system', help='system runtime to use as filter [ios 13.5, ..]' )
     parser.add_argument( '-n', '--name',  help='simulator name string to use as filter [iPhone 11, ...]' )
     parser.add_argument( '-c', '--count',  help='number of device to display' )
+    parser.add_argument( '-p', '--path',  action='store_true', help='display paths in output' )
     parser.add_argument( 'app',    metavar='app', nargs='*', default='', help='app identifier' )
     args = parser.parse_args()
 
