@@ -4,12 +4,21 @@ This is just a collection of small utilities to facilitate management of my comp
 
 Not intended necessarily to be re-used as is, but more example of ad-hoc utilities
 
+Here are the utilities:
+
+* synchronize configuration files with a git repo using [`syncfiles.py`](#syncfiles.py)
+* find ios simulator files and simplify xcode upgrades from one version to the next, with the [`simctl.py`](#simctl.py) wrapper on `simctl`
+* merge and update new translations with [`genstring.py`](#genstring.py), a wrapper on `genstrings`
+
 # How to install:
+
+You can use the syncfiles.py utility itself or copy manually what you need
 
 ```
 mkdir ~/bin
 ./bin/syncfiles.py install
 ```
+
 
 # syncfiles.py
 
@@ -90,6 +99,19 @@ The following command can be run to copy files between the repo and source:
 
 Each command by default will always only print what it would do, and in order to actually execute the copy you need to provide the `-e` or `--execute` flag
 
+
+# simctl.py
+
+This helps workflow around finding files in the simulator. It uses andcomplements `simctl` provided by apple. In addition, if you add a small snippet of code to your apps to save a small hidden file in the documents directory on startup, it will also help finding old simulator, which can be very handy when we need to move files from one version to the other, when Xcode upgrades for instance.
+
+## Adding a needle to find the folders
+
+Using the same idea as [Simulator Data Finder](https://github.com/roznet/iossimfinder), once you add a snippet of code that sames a file `.simneedle.{bundleIdentifier}`
+
+`simctl.py` will then use that hidden file to find folder for simulator data and what app bundle they correspond to
+
+## 
+
 # genstrings.py
 
 This utility is a wrapper around the `genstrings` utility provided by `xcode` to generate `Localized.strings`. It help keep the resulting `Localized.strings` files organized and grouped by comment, merges the new translation on top of existing ones and adds basic ability to mark the translation needed to be reviewed for quick access
@@ -116,13 +138,5 @@ optional arguments:
   -r, --remove          remove deleted entries
   -v, --verbose         verbose output
 ```
-
-# simctl.py
-
-This helps workflow around finding files in the simulator. It uses andcomplements `simctl` provided by apple. In addition, if you add a small snippet of code to your apps to save a small hidden file in the documents directory on startup, it will also help finding old simulator, which can be very handy when we need to move files from one version to the other, when Xcode upgrades for instance.
-
-## Adding a needle to find the folders
-
-Using the same idea as [Simulator Data Finder](https://github.com/roznet/iossimfinder), once you add a snippet of code that sames a file `.simneedle.{bundleIdentifier}`
 
 

@@ -39,9 +39,7 @@ from collections import defaultdict
 
 try:
     from fuzzywuzzy import fuzz
-    print( 'yo' )
 except:
-    print( 'no yo' )
     class fuzz:
         def ratio( s1, s2 ):
             if s1 in s2:
@@ -69,6 +67,8 @@ class SimFilter:
 class SimData:
     def __init__(self,args,filter):
         self.args = args
+
+
         self.verbose = args.verbose
         cmd = ['xcrun', 'simctl', 'list', '-j' ]
         if self.verbose:
