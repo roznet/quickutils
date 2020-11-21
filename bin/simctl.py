@@ -67,8 +67,6 @@ class SimFilter:
 class SimData:
     def __init__(self,args,filter):
         self.args = args
-
-
         self.verbose = args.verbose
         cmd = ['xcrun', 'simctl', 'list', '-j' ]
         if self.verbose:

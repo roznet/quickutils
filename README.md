@@ -6,9 +6,9 @@ Not intended necessarily to be re-used as is, but more example of ad-hoc utiliti
 
 Here are the utilities:
 
-* synchronize configuration files with a git repo using [`syncfiles.py`](#syncfiles.py)
-* find ios simulator files and simplify xcode upgrades from one version to the next, with the [`simctl.py`](#simctl.py) wrapper on `simctl`
-* merge and update new translations with [`genstring.py`](#genstring.py), a wrapper on `genstrings`
+* synchronize configuration files with a git repo using [`syncfiles.py`](#syncfilespy)
+* find ios simulator files and simplify xcode upgrades from one version to the next, with the [`simctl.py`](#simctlpy) wrapper on `simctl`
+* merge and update new translations with [`genstring.py`](#genstringpy), a wrapper on `genstrings`
 
 # How to install:
 
@@ -110,7 +110,16 @@ Using the same idea as [Simulator Data Finder](https://github.com/roznet/iossimf
 
 `simctl.py` will then use that hidden file to find folder for simulator data and what app bundle they correspond to
 
-## 
+## Finding simulator data folder
+
+You can list the simulator available with `simctl.py list` which is a simple wrapper on simctl. The wrapper allows quick filter to find specific simulators for example `simctl.py -s 14.1 -name iphone list` 
+
+## Find apps container in older simulators
+
+The first functionality is the equivalent of get_app_container for older simulator that are no longer available. It finds the app using the needle mechanism.
+
+The key functionality is the `upgrade` command, which will list for the matching simulator the apps it found that can be moved to the newest simulators, along with the command that will execute the upgrade.
+
 
 # genstrings.py
 
