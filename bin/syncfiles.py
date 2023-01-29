@@ -82,6 +82,7 @@ class FilePair :
     def dir_is_readable(self):
         return os.access( self.dir_file(), os.R_OK )
 
+
 class Config :
     def __init__(self,args=None):
         self.args = args
@@ -93,6 +94,9 @@ class Config :
         self.max_len_src = 0
 
     def find_config_file(self):
+        '''
+        Find the config file in the current directory or any parent directory
+        '''
         cwdcomponents = self.cwd.split('/')
         found = False
         while(found is False and cwdcomponents):
@@ -117,6 +121,11 @@ class Config :
             git_root_out = subprocess.run( ['git', 'rev-parse', '--show-toplevel'], capture_output=True)
             if git_root_out.returncode == 0:
                 self.git_root = git_root_out.stdout.decode( 'utf-8' ).splitlines()[0]
+                if self.verbose:
+                    print( 'CONFIG: Using Git Files only, git_root={}'.format( self.git_root ) )
+            else:
+                if self.verbose:
+                    print( 'CONFIG: Not in a git repository' )
 
         if self.verbose:
             print( 'CONFIG: {} base={} git={}'.format(candidate,self.basedir, self.git_root ) )
@@ -288,7 +297,8 @@ class Config :
                             print( "SKIP: source %s" %(full_dir_file,) )
                     else:
                         pair = FilePair( dir, src, rel_file )
-                        print( pair )
+                        if self.verbose:
+                            print( 'FOUND: discovered %s'%(pair,) )
                         self.max_len_dir = max(self.max_len_dir, len(self.display_dir_file(pair)))
                         self.max_len_src = max(self.max_len_src, len(self.display_src_file(pair)))
                         file_pairs += [ pair ]
@@ -323,6 +333,8 @@ class Config :
                 self.max_len_dir = max(self.max_len_dir, len(self.display_dir_file(pair)))
                 self.max_len_src = max(self.max_len_src, len(self.display_src_file(pair)))
                 file_pairs += [ pair ]
+                if self.verbose:
+                    print( 'FOUND: from git {}'.format(pair) )
                 
         return file_pairs
     
