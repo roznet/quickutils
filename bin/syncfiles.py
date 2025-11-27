@@ -27,7 +27,6 @@
 import sys
 import subprocess
 import os
-import distutils.spawn
 import hashlib
 import argparse
 import json
@@ -487,9 +486,9 @@ class Config :
     def cmd_difftool(self):
         tool = None
         if self.args.difftool == 'auto':
-            if distutils.spawn.find_executable( 'ksdiff' ):
+            if shutil.which( 'ksdiff' ):
                 tool = ['ksdiff', '--partial-changeset']
-            elif distutils.spawn.find_executable( 'icdiff' ):
+            elif shutil.which( 'icdiff' ):
                 tool = ['icdiff']
             else:
                 tool = ['vimdiff']
