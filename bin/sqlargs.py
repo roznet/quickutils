@@ -100,6 +100,17 @@ def _quote_shell(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
+def _quote_csv(value: str) -> str:
+    """
+    Quote a string for CSV format using double quotes.
+
+    CSV quoting rules:
+        abc   -> "abc"
+        a"b   -> "a""b"
+    """
+    return '"' + value.replace('"', '""') + '"'
+
+
 def _format_values(
     values: Iterable[Optional[object]],
     *,
@@ -126,6 +137,8 @@ def _format_values(
 
         if quote == "shell":
             text = _quote_shell(text)
+        elif quote == "csv":
+            text = _quote_csv(text)
         elif quote == "none":
             pass
         else:
@@ -252,9 +265,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "-q",
         "--quote",
-        choices=["none", "shell"],
+        choices=["none", "shell", "csv"],
         default="none",
-        help="Quoting style for values (default: none)",
+        help="Quoting style for values: none, shell (single quotes), or csv (double quotes) (default: none)",
     )
 
     parser.add_argument(

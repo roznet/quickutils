@@ -91,6 +91,42 @@ def test_build_args_shell_quote(tmp_path):
     assert result == "'Alpha'"
 
 
+def test_build_args_csv_quote(tmp_path):
+    db_path = _make_db(tmp_path)
+
+    result = sqlargs.build_args(
+        db_path,
+        "SELECT name FROM airports WHERE code = 'AAA'",
+        quote="csv",
+    )
+
+    # simple value, double quoted
+    assert result == '"Alpha"'
+
+
+def test_build_args_csv_quote_with_double_quote(tmp_path):
+    db_path = _make_db(tmp_path)
+    
+    # Add a row with a name containing a double quote
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.cursor()
+        cur.execute("INSERT INTO airports (code, name, country) VALUES (?, ?, ?)", 
+                   ("EEE", 'Test "Quote" Value', "US"))
+        conn.commit()
+    finally:
+        conn.close()
+
+    result = sqlargs.build_args(
+        db_path,
+        "SELECT name FROM airports WHERE code = 'EEE'",
+        quote="csv",
+    )
+
+    # double quotes should be escaped by doubling them
+    assert result == '"Test ""Quote"" Value"'
+
+
 def test_main_invocation_creates_output(tmp_path, capsys):
     db_path = _make_db(tmp_path)
 
