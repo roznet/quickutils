@@ -1,3 +1,27 @@
 *.pyc
 *~
 .DS_Store
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Pytest / coverage / tooling
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+

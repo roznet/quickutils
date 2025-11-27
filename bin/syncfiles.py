@@ -23,6 +23,25 @@
 #  SOFTWARE.
 #  
 #
+"""
+Synchronize configuration files between a git-backed repository and their
+locations on the local filesystem, based on rules defined in a `.syncfiles`
+JSON file.
+
+The `.syncfiles` file is searched from the current working directory upwards
+and describes how directories in this repository map to real source
+directories, along with optional ignore patterns and a `validate` expression.
+
+Commands implemented by this script let you:
+
+- inspect differences (`status`, `diff`, `difftool`)
+- bootstrap a machine (`install`)
+- keep files in sync in either direction (`sync`, `pull`, `push`)
+
+The `validate` expression, if present, is evaluated as a trusted Python
+expression in a restricted environment with access to `os` and `platform`.
+Use it to enable/disable a given configuration on a particular machine or OS.
+"""
 
 import sys
 import subprocess
@@ -36,14 +55,30 @@ import fnmatch
 import platform
 
 def file_hash(filepath):
-    openedFile = open(filepath, 'rb')
-    readFile = openedFile.read()
+    """
+    Compute a SHA1 hash for the file at ``filepath`` using a streaming reader.
 
-    hash = hashlib.sha1(readFile)
-    return hash.hexdigest()
+    This avoids loading the whole file in memory, which is important for
+    large configuration files.
+    """
+    sha1 = hashlib.sha1()
+    with open(filepath, 'rb') as opened_file:
+        for chunk in iter(lambda: opened_file.read(8192), b''):
+            sha1.update(chunk)
+    return sha1.hexdigest()
 
 
 class FilePair :
+    """
+    Represent a logical pair of files: one in the repository tree (``dir``)
+    and one in the source filesystem (``src``), identified by a relative path.
+
+    For example:
+        dir:      /repo/config/etc/apache2
+        src:      /etc/apache2
+        relpath:  sites/default.conf
+    """
+
     def __init__(self,dir,src_dir,file_rel_path):
         '''
         FilePair Object:
@@ -83,6 +118,16 @@ class FilePair :
 
 
 class Config :
+    """
+    Configuration and command dispatcher for ``syncfiles.py``.
+
+    Responsible for:
+    - locating and loading the nearest ``.syncfiles`` file
+    - expanding directory mappings and ignore rules
+    - constructing ``FilePair`` instances
+    - executing high-level commands (status, sync, install, etc.)
+    """
+
     def __init__(self,args=None):
         self.args = args
         self.verbose = self.args.verbose
@@ -94,7 +139,8 @@ class Config :
 
     def find_config_file(self):
         '''
-        Find the config file in the current directory or any parent directory
+        Find the config file in the current directory or any parent directory.
+        Also detects the git root (unless ``--nogit`` is passed).
         '''
         cwdcomponents = self.cwd.split('/')
         found = False
@@ -111,7 +157,7 @@ class Config :
                 cwdcomponents = cwdcomponents[:-1]
                 
         if found is False:
-            print( "Couldn't locate a .syncfile" )
+            print( "Couldn't locate a .syncfiles" )
             sys.exit( 1 )
 
         self.git_root = None
@@ -132,18 +178,30 @@ class Config :
     def validate_config(self):
         valid = True
         if 'validate' in self.defs:
-            valid = eval( self.defs['validate'] )
-            if not valid:
+            expr = self.defs['validate']
+            env = {'__builtins__': {}, 'os': os, 'platform': platform}
+            try:
+                valid = bool(eval( expr, env, {} ))
+            except Exception as exc:
                 if not self.args.force:
-                    print( 'Skipping, Validation "{}" evaluates to False'.format( self.defs['validate'] ) )
-                    sys.stdout.flush()
-                    os._exit(0)
+                    print( 'Validation "{}" raised {}: {}'.format( expr, type(exc).__name__, exc ) )
+                    sys.exit(1)
                 else:
                     if self.verbose:
-                        print( 'WARNING: validation "{}" evaluates to False'.format( self.defs['validate'] ) )
+                        print( 'WARNING: validation "{}" raised {}, continuing because --force is set'.format( expr, type(exc).__name__ ) )
+                    valid = True
             else:
-                if self.verbose:
-                    print( 'CONTINUE: Validation "{}" evaluates to True'.format( self.defs['validate'] ) );
+                if not valid:
+                    if not self.args.force:
+                        print( 'Skipping, Validation "{}" evaluates to False'.format( expr ) )
+                        sys.stdout.flush()
+                        sys.exit(0)
+                    else:
+                        if self.verbose:
+                            print( 'WARNING: validation "{}" evaluates to False, continuing because --force is set'.format( expr ) )
+                else:
+                    if self.verbose:
+                        print( 'CONTINUE: Validation "{}" evaluates to True'.format( expr ) );
                     
         return valid
     
@@ -202,7 +260,6 @@ class Config :
               if a dir: search that dir
         '''
         rv = []
-        self.verbose = False
         for x in files:
             if os.path.isfile( x ):
                 candidate = os.path.join( self.cwd, x )
@@ -310,8 +367,12 @@ class Config :
         if self.args.files:
             cmd += self.args.files
         git_ls_out = subprocess.run( cmd, capture_output=True)
-        if git_ls_out.returncode == 0:
-            files = git_ls_out.stdout.decode( 'utf-8' ).splitlines()
+        if git_ls_out.returncode != 0:
+            if self.verbose:
+                print( 'CONFIG: git ls-files failed with return code {}'.format( git_ls_out.returncode ) )
+            return file_pairs
+
+        files = git_ls_out.stdout.decode( 'utf-8' ).splitlines()
 
         for one in files:
             full_path_file = os.path.join( os.getcwd(), one )
@@ -344,6 +405,12 @@ class Config :
             return self.construct_file_pairs(self.args.files)
         else:
             return self.discover_file_pairs()
+    
+    def _existing_pairs(self):
+        """
+        Helper returning all file pairs for which the source file exists.
+        """
+        return [x for x in self.list_file_pairs() if x.src_file_exists() ]
     
     def display_dir_file(self, filepair ):
         dir_path = self.expand_src_to_dir[filepair.src]
@@ -395,7 +462,13 @@ class Config :
 
 
     def cmd_sync(self):
-        exists = [x for x in self.list_file_pairs() if x.src_file_exists() ]
+        '''
+        Synchronize files in both directions based on modification time.
+
+        For each existing source file, copy the newer of the repo and source
+        versions to the older one.
+        '''
+        exists = self._existing_pairs()
 
         for x in exists:
             if not x.is_match():
@@ -414,7 +487,12 @@ class Config :
         self.execute_warning()
 
     def cmd_pull(self):
-        exists = [x for x in self.list_file_pairs() if x.src_file_exists() ]
+        '''
+        Copy files from their source locations into the repository.
+
+        Only mismatched existing files are copied, from source to repo.
+        '''
+        exists = self._existing_pairs()
 
         for x in exists:
             if not x.is_match():
@@ -429,7 +507,12 @@ class Config :
 
 
     def cmd_push(self):
-        exists = [x for x in self.list_file_pairs() if x.src_file_exists() ]
+        '''
+        Copy files from the repository into their source locations.
+
+        Only mismatched existing files are copied, from repo to source.
+        '''
+        exists = self._existing_pairs()
 
         for x in exists:
             if not x.is_match():
@@ -445,7 +528,7 @@ class Config :
                 shutil.copyfile( from_path, to_path )
             except IOError as io_err:
                 to_dir = os.path.dirname( to_path )
-                os.makedirs( to_dir )
+                os.makedirs( to_dir, exist_ok=True )
                 shutil.copyfile( from_path, to_path )
         else:    
             print( 'cp {} {}'.format(from_path, to_path ) )
@@ -456,6 +539,11 @@ class Config :
             print( 'Preview mode. Files were not copied, add --execute option to copy' )
         
     def cmd_install(self):
+        '''
+        Ensure that every repository file exists at its source location.
+
+        For any missing or mismatched source file, copy from repo to source.
+        '''
         for x in self.list_file_pairs():
             if not x.src_file_exists() or not x.is_match():
                 self.copyfile(x.dir_file(), x.src_file() )
@@ -463,8 +551,16 @@ class Config :
         self.execute_warning()
                     
     def cmd_status(self):
-        exists = [ x for x in self.list_file_pairs() if x.src_file_exists() ]
-        unknown = [ x for x in self.list_file_pairs() if not x.src_file_exists() ]
+        '''
+        Print the status of all known file pairs, including:
+        - identical files (``.``)
+        - modified files (``M``)
+        - unreadable files (``!`` / ``A``)
+        - files missing from the source side (``?``)
+        '''
+        file_pairs = self.list_file_pairs()
+        exists = [ x for x in file_pairs if x.src_file_exists() ]
+        unknown = [ x for x in file_pairs if not x.src_file_exists() ]
 
         done = False
         for x in exists:
@@ -479,7 +575,12 @@ class Config :
 
 
     def cmd_apply(self,fns):
-        exists = [ x for x in self.list_file_pairs() if x.src_file_exists() ]
+        '''
+        Apply a callable to each existing file pair.
+
+        This is a low-level helper used by other commands.
+        '''
+        exists = self._existing_pairs()
         for x in exists:
             fns(x)
 
@@ -499,7 +600,7 @@ class Config :
         elif self.args.difftool.startswith( 'v' ):
                 tool = ['vimdiff']
             
-        exists = [ x for x in self.list_file_pairs() if x.src_file_exists() ]
+        exists = self._existing_pairs()
         for x in exists:
             if not x.is_match():
                 self.output_status(x)
@@ -508,7 +609,10 @@ class Config :
                 subprocess.call( process_arg )
 
     def cmd_diff(self):
-        exists = [ x for x in self.list_file_pairs() if x.src_file_exists() ]
+        '''
+        Show ``diff`` output for each mismatched existing file pair.
+        '''
+        exists = self._existing_pairs()
 
         for x in exists:
             if not x.src_is_readable():

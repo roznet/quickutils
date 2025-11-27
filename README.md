@@ -28,38 +28,45 @@ syncfiles.py is intended to solve the issue that I wanted to keep all my config 
 
 This utilities can be used to synchronize files between different location in the system or home directory and a github repository. I use it to keep all my config files both for $HOME and the sytem config (/etc, /lib, etc)
 
-It relies on a json file .syncfiles that contains the configuration of the map between the source and the repo. The file has two keys `dirmap` and `ignore`. Here is an example:
+It relies on a json file `.syncfiles` that contains the configuration of the map between the source and the repo. The file has a required key `dirmap` and optional keys such as `ignore` and `validate`. Here is an example:
 
 ```
-{"dirmap":{".":"~/","etc":"/etc"},"ignore":["README.md","*~"]}
+{"dirmap":{".":"~/","etc":"/etc"},"ignore":["README.md","*~"],"validate":"platform.system() == 'Linux'"}
 ```
 
 In this example all the files in `.` will be sync'd to your home dir and the files in `etc` will be sync'd to `/etc`. The files `README.md` or the files matching the pattern `*~` will be ignored. The files in the dirmap, for example here `etc` are automatically ignored for the current directory rule `.`.
 
+The `validate` key, when present, must be a Python expression stored as a string. It is evaluated in a restricted environment with access to the `os` and `platform` modules. If it evaluates to `False`, the configuration is skipped unless the `--force` flag is provided. This is useful to enable a given configuration only on some machines or operating systems.
+
 ## Usage
 
-The `syncfiles.py` should always be run from within the repo directory where the .syncfiles is (or one of its subdir). The utility takes a command as an argument, here is the usage:
+The `syncfiles.py` should always be run from within the repo directory where the `.syncfiles` is (or one of its subdir). The utility takes a command as an argument, here is the usage:
 
 ```
-usage: syncfiles.py [-h] [-e] [-v] Command [FILES [FILES ...]]
+usage: syncfiles.py [-h] [-a] [-f] [-e] [-v] [-t {auto,vimdiff,ksdiff}] [--nogit] Command [FILES ...]
 
-Check configuration
+Synchronize configuration files between this repository and the mapped source
+directories described in .syncfiles.
 
 positional arguments:
-  Command        command to execute:
-                   status: Show status of files
-                   install: Copy all the missing files to source
-                   diff: Show diff for modified files
-                   difftool: Show diff for modified files in ksdiff
-                   sync: copy most recent files to older one
-                   pull: copy to local the original files
-                   push: push local file to the original location
-  FILES
+  Command               command to execute:
+                          status: Show status of files
+                          install: Copy all the missing files to source
+                          diff: Show diff for modified files
+                          difftool: Show diff for modified files in ksdiff or vimdiff
+                          sync: copy most recent files to older one
+                          pull: copy to local the original files
+                          push: push local file to the original location
+  FILES                 Optional list of files or directories to limit the operation.
 
 optional arguments:
-  -h, --help     show this help message and exit
-  -e, --execute  actually execute the commands otherwise just print
-  -v, --verbose  verbose output
+  -h, --help            show this help message and exit
+  -a, --all             Show all files including those unchanged
+  -f, --force           run even if validate is false or raises
+  -e, --execute         actually execute the commands otherwise just print
+  -v, --verbose         verbose output
+  -t, --difftool        diff tool to use (auto, vimdiff, ksdiff)
+      --nogit           always search files without git (ignore git ls-files)
 ```
 
 ### Checking Status
