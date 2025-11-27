@@ -28,14 +28,12 @@ import sys
 import subprocess
 import os
 import time
-from distutils import version
-import hashlib
+from collections import defaultdict
+
+from packaging.version import Version
 import argparse
 import json
 from pprint import pprint
-import shutil
-import fnmatch
-from collections import defaultdict
 
 try:
     from fuzzywuzzy import fuzz
@@ -52,6 +50,14 @@ class SimFilter:
 
 
     def valid(self,runtime=None,device=None):
+        """
+        Return True if the given runtime/device match the CLI filters.
+
+        Filters on:
+        - system: substring of runtime name
+        - name: substring of device name
+        - booted: only devices whose state is 'booted'
+        """
         rv = True
         if runtime:
             if self.args.system and self.args.system.lower() not in runtime['name'].lower():
@@ -66,28 +72,38 @@ class SimFilter:
 
 class SimData:
     def __init__(self,args,filter):
+        """
+        Load simulator data from ``xcrun simctl list -j`` and prepare helpers
+        to query devices and their containers.
+        """
         self.args = args
         self.verbose = args.verbose
         cmd = ['xcrun', 'simctl', 'list', '-j' ]
         if self.verbose:
             print( f'Running {cmd}' )
-        out = subprocess.Popen( cmd, stdout= subprocess.PIPE, stderr=subprocess.STDOUT )
-        (list,out) = out.communicate()
-        self.simdata = json.loads( list.decode('utf-8') )
+        proc = subprocess.Popen( cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT )
+        (output,_) = proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"simctl list failed with exit code {proc.returncode}")
+        self.simdata = json.loads( output.decode('utf-8') )
         if self.verbose:
             k = len(self.simdata['devices'])
             print( f'Found {k} devices' )
         self.filter = filter
 
     def list_containers(self,device):
+        """
+        Return a mapping of bundle identifier -> info dict for all containers
+        found for the given device, using the .simneedle mechanism.
+        """
         rv = dict()
         findpath = os.path.join(device['dataPath'], 'Containers' )
         if os.path.isdir( findpath ):
             cmd =['find', findpath, '-name', '.simneedle.*']
             if self.verbose:
                 print( f'Running {cmd}' )
-            out = subprocess.Popen( cmd, stdout= subprocess.PIPE, stderr=subprocess.STDOUT )
-            (found,out) = out.communicate()
+            proc = subprocess.Popen( cmd, stdout= subprocess.PIPE, stderr=subprocess.STDOUT )
+            (found,_) = proc.communicate()
             paths = found.decode('utf-8').split('\n' )
             for path in paths:
                 if path:
@@ -102,16 +118,23 @@ class SimData:
         
         
     def get_app_container(self,device,app,which='data'):
+        """
+        Return the app container path for the given device/app, using
+        ``simctl get_app_container`` when possible and falling back to the
+        .simneedle-based search.
+        """
         found = None
         if device['isAvailable'] and device['state'] != 'Shutdown':
             cmd = ['xcrun', 'simctl', 'get_app_container', device['udid'], app, which]
             if self.verbose:
-                print( f'cRunning {cmd}' )
+                print( f'Running {cmd}' )
             try:
-                out = subprocess.Popen( cmd , stdout= subprocess.PIPE, stderr=subprocess.STDOUT )
-                (path,out) = out.communicate()
+                proc = subprocess.Popen( cmd , stdout= subprocess.PIPE, stderr=subprocess.STDOUT )
+                (path,_) = proc.communicate()
                 found = path.decode('utf-8').rstrip()
-            except:
+            except Exception as exc:
+                if self.verbose:
+                    print(f'WARNING: get_app_container failed for {app} on {device["udid"]}: {exc}')
                 found = None
         if not found:
             findpath = os.path.join(device['dataPath'],'Containers')
@@ -137,7 +160,11 @@ class SimData:
         return { 'identifier': identifier, 'name': f'{system} {version}', 'version': version }
 
 
-    def list(self,searchname=None,searchruntime=None):
+    def list(self):
+        """
+        Print a simple list of simulators, filtered and grouped according
+        to the CLI options (system, name, booted, group).
+        """
         to_sort = []
         
         for (runtimeid,devices) in self.simdata['devices'].items():
@@ -146,9 +173,9 @@ class SimData:
                 if self.filter.valid( runtime, device ):
                     to_sort.append( (runtime,device) )
         if self.args.group[0] == 'v':
-            to_sort.sort( key = lambda x: version.LooseVersion( x[0]['version'] ) )
+            to_sort.sort( key = lambda x: Version( x[0]['version'] ) )
         else:
-            to_sort.sort( key = lambda x: (x[1]['name'], version.LooseVersion( x[0]['version'] ) ) )
+            to_sort.sort( key = lambda x: (x[1]['name'], Version( x[0]['version'] ) ) )
         for (runtime,device) in to_sort:
             print( '{}: {} {}'.format(runtime['name'], device['name'],'[Booted]' if device['state'] == 'Booted' else '' ) )
 
@@ -180,7 +207,7 @@ class SimData:
                 device['runtime'] = runtime
                 rv[ device['name'] ].append( device )
         for (name,devices) in rv.items():
-            devices.sort( key=lambda x: version.LooseVersion( x['runtime']['version'] ) )
+            devices.sort( key=lambda x: Version( x['runtime']['version'] ) )
         return rv
         
     
@@ -198,13 +225,21 @@ class SimData:
 
 class Driver:
     def __init__(self,args):
+        """
+        Command dispatcher for the ``simctl.py`` CLI.
+
+        Wraps a ``SimData`` instance and exposes high-level commands such as
+        ``list``, ``find``, ``info``, ``upgrade`` and ``dir``.
+        """
         self.args = args
         self.simdata = SimData(args,SimFilter(args))
         
     def cmd_list(self):
-        self.simdata.list(self.args.name,self.args.system)
+        """List all matching simulators."""
+        self.simdata.list()
         
     def cmd_find(self):
+        """Find the best-matching simulators using fuzzy matching on name/runtime."""
         l = self.simdata.sorted_list(self.args.name,self.args.system)
         first = '>'
         for device in l[:5]:
@@ -212,11 +247,16 @@ class Driver:
             first = ' '
 
     def cmd_info(self):
+        """Print detailed information for one or more matching simulators."""
         devices = self.simdata.sorted_list(self.args.name, self.args.system )
         count = int(self.args.count) if self.args.count else 1
         pprint( devices[:count] )
 
     def cmd_upgrade(self):
+        """
+        Suggest commands to move app data between simulator versions for the
+        same device name, using the .simneedle markers.
+        """
         l = self.simdata.version_by_name()
         count = int(self.args.count) if self.args.count else 2
 
@@ -287,6 +327,7 @@ class Driver:
                             
         
     def cmd_dir(self):
+        """Print the app container directory for the top-ranked matching device."""
         if len(self.args.app) < 1:
             print( 'No app identifier provided' )
         else:
