@@ -24,4 +24,6 @@ dist/
 coverage.xml
 htmlcov/
 
+tmp
+
 
