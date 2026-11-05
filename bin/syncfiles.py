@@ -1159,7 +1159,9 @@ if __name__ == "__main__":
     parser.add_argument( '--nogit', action='store_true', help='always search files without git', default=False )
     parser.add_argument( '--show-secrets', action='store_true', help='allow diff/difftool on encrypted files (prints plaintext)', default=False )
     parser.add_argument( 'files',    metavar='FILES', nargs='*' )
-    args = parser.parse_args()
+    # intermixed: flags may come after FILES too (`install -e bin etc`), which plain
+    # parse_args rejects with "unrecognized arguments" because of the nargs="*" positional
+    args = parser.parse_intermixed_args()
 
     command = Config(args)
 
