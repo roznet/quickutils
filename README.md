@@ -43,7 +43,7 @@ The `validate` key, when present, must be a Python expression stored as a string
 The `syncfiles.py` should always be run from within the repo directory where the `.syncfiles` is (or one of its subdir). The utility takes a command as an argument, here is the usage:
 
 ```
-usage: syncfiles.py [-h] [-a] [-f] [-e] [-v] [-t {auto,vimdiff,ksdiff}] [--nogit] Command [FILES ...]
+usage: syncfiles.py [-h] [-a] [-f] [-e] [-v] [-t {auto,vimdiff,ksdiff}] [--nogit] [--show-secrets] Command [FILES ...]
 
 Synchronize configuration files between this repository and the mapped source
 directories described in .syncfiles.
@@ -57,6 +57,7 @@ positional arguments:
                           sync: copy most recent files to older one
                           pull: copy to local the original files
                           push: push local file to the original location
+                          check: check that files listed in "encrypted" are encrypted (no key needed)
   FILES                 Optional list of files or directories to limit the operation.
 
 optional arguments:
@@ -66,6 +67,7 @@ optional arguments:
   -e, --execute         actually execute the commands otherwise just print
   -v, --verbose         verbose output
   -t, --difftool        diff tool to use (auto, vimdiff, ksdiff)
+      --show-secrets    allow diff/difftool on encrypted files (prints plaintext)
       --nogit           always search files without git (ignore git ls-files)
 ```
 
@@ -92,6 +94,8 @@ M etc/postfix/main.cf                                     < /etc/postfix/main.cf
 * `.` means the files are the same
 * `M` means the files are difference and the `<` or `>` indicates which direction should a sync copy the files (based on most recent timestamp)
 * `?` means the files in the repo does not exist in the destination directory
+* `A` means the file exists in the destination but not (or not readably) in the repo
+* `K`, `X`, `E` are for encrypted files, see [Encrypted files](#encrypted-files-sops)
 
 You can also run `diff` or `difftool` that will show the diffs between the source and the repo
 
@@ -105,6 +109,34 @@ The following command can be run to copy files between the repo and source:
 * `pull` will copy all the modified existing fifes from the source to the repo
 
 Each command by default will always only print what it would do, and in order to actually execute the copy you need to provide the `-e` or `--execute` flag
+
+### Encrypted files (sops)
+
+Secrets can be stored encrypted in the repo with [sops](https://github.com/getsops/sops) and [age](https://github.com/FiloSottile/age). They are decrypted only when copied to their destination, on a host whose key can decrypt them. Requires sops 3.10 or later (tested with 3.13.3) on the `PATH`.
+
+List them in an `encrypted` map, with paths relative to the `.syncfiles` directory like the `dirmap` keys. The value is the sops type (`dotenv`, `json`, `yaml`, `ini` or `binary` for opaque files such as `.p8`/`.p12`/`.php`), or an object to set the destination mode (default `0600`) and group:
+
+```
+{"dirmap":{".":"~/","app":"~/app"},
+ "encrypted":{"app/.env.secrets":"dotenv",
+              "app/AuthKey.p8":"binary",
+              "etc/app/secrets.json":{"type":"json","mode":"0640","group":"www-data"}}}
+```
+
+* The sops rules come from the first `.sops.yaml` found walking up from the `.syncfiles` directory to the git root. `.sops.yaml` itself is never synced.
+* `install`, `push` and the repo-newer half of `sync` print `decrypt <repo> -> <dest>`, and write the plaintext atomically (temp file created 0600, then renamed), with the configured mode and group. A destination with the right content but the wrong mode shows as `M` and is fixed by `install`.
+* `pull` and the dest-newer half of `sync` print `encrypt <dest> -> <repo>`. An existing file is updated with `sops edit`, so unchanged values keep their ciphertext and the git diff stays small. A file not in the repo yet (status `A`) is encrypted with the `.sops.yaml` creation rule for its repo path. Either way the result must pass `sops filestatus` before it replaces the repo file: on any error the repo file is left untouched and the exit code is 1.
+* sops re-serialises what it decrypts (blank lines dropped, JSON reformatted...). After a `pull`, a hint is printed if the file decrypts to something different from the destination: run `install -e` once so the destination takes the canonical form.
+* `diff` and `difftool` skip encrypted files, since they would print secrets, unless `--show-secrets` is given. The decrypted side then goes to a mode-600 temp file that is deleted afterwards.
+* `check` verifies, without needing any key, that every file listed in `encrypted` is really encrypted. Use it in a pre-commit hook (`syncfiles.py check --force`, so `validate` doesn't skip it).
+
+Extra status codes for encrypted files:
+
+* `K` this host has no key for the file: shown, and skipped by every command
+* `X` listed as encrypted but stored in plaintext in the repo: refused by every command, exit code 1
+* `E` another sops error (bad MAC, corrupt file): refused, exit code 1
+
+On the admin machine, sops can read the age key from the keychain with `SOPS_AGE_KEY_CMD`; on other hosts it uses its default key file (`~/.config/sops/age/keys.txt`, or `~/Library/Application Support/sops/age/keys.txt` on macOS). Jobs started by launchd or cron don't read the shell profile, so set `SOPS_AGE_KEY_FILE` in their environment if they run syncfiles.
 
 
 # simctl.py
