@@ -43,7 +43,7 @@ The `validate` key, when present, must be a Python expression stored as a string
 The `syncfiles.py` should always be run from within the repo directory where the `.syncfiles` is (or one of its subdir). The utility takes a command as an argument, here is the usage:
 
 ```
-usage: syncfiles.py [-h] [-a] [-f] [-e] [-v] [-t {auto,vimdiff,ksdiff}] [--nogit] [--show-secrets] Command [FILES ...]
+usage: syncfiles.py [-h] [-a] [-f] [-e] [-v] [-t {auto,vimdiff,ksdiff}] [--nogit] [--allow-stale] [--version] [--show-secrets] Command [FILES ...]
 
 Synchronize configuration files between this repository and the mapped source
 directories described in .syncfiles.
@@ -69,7 +69,19 @@ optional arguments:
   -t, --difftool        diff tool to use (auto, vimdiff, ksdiff)
       --show-secrets    allow diff/difftool on encrypted files (prints plaintext)
       --nogit           always search files without git (ignore git ls-files)
+      --allow-stale     run even if the checkout is behind its upstream
+      --version         print the version, path and SHA1 of this copy
 ```
+
+### Stale checkouts and versions
+
+Before any command, syncfiles runs `git fetch` (reusing one younger than a minute) and **refuses to run, exit code 2,
+when the checkout is behind its upstream**: from a stale checkout, `pull` would copy live files over newer repo files,
+and `push`/`install` would put old ones back. `git pull` first, or pass `--allow-stale`. Offline or on a branch without
+an upstream it only warns; unpushed local commits are fine.
+
+`syncfiles.py --version` prints the version, where this copy lives and the start of its SHA1, so an out-of-date copy on
+a machine is easy to spot. Bump `__version__` in `bin/syncfiles.py` with every change.
 
 ### Checking Status
 

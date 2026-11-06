@@ -39,6 +39,12 @@ Commands implemented by this script let you:
 - keep files in sync in either direction (`sync`, `pull`, `push`)
 - check that encrypted files are really encrypted (`check`)
 
+Before any command it refuses to run from a checkout that is behind its
+upstream (``git fetch`` first, reused for a minute): a stale checkout would copy
+live files over newer repo files, or put old ones back. ``--allow-stale``
+overrides; offline or without an upstream it only warns. ``--version`` prints the
+version and a fingerprint of this file, to spot an out-of-date copy on a node.
+
 The `validate` expression, if present, is evaluated as a trusted Python
 expression in a restricted environment with access to `os` and `platform`.
 Use it to enable/disable a given configuration on a particular machine or OS.
@@ -61,10 +67,25 @@ import fnmatch
 import platform
 import tempfile
 import shlex
+import time
 try:
     import grp
 except ImportError:  # pragma: no cover - not available on Windows
     grp = None
+
+# Bump on every change (date, plus .N for a second change the same day), so
+# `syncfiles.py --version` on each node shows which copies are out of date.
+__version__ = '2026.11.06'
+
+# A fetch younger than this is reused: `dosync` runs syncfiles in many directories in a row.
+FETCH_MAX_AGE = 60
+
+
+def version_string():
+    """Version plus where this copy lives and the start of its SHA1, which changes even if the version wasn't bumped."""
+    path = os.path.realpath(__file__)
+    return 'syncfiles {} ({}, sha1 {})'.format(__version__, path, file_hash(path)[:12])
+
 
 def file_hash(filepath):
     """
@@ -401,6 +422,7 @@ class Config :
         self.errors = False
         self.cwd = os.getcwd()
         self.find_config_file()
+        self.check_freshness()
         self.expand_dirs()
         self.setup_encryption()
         self.max_len_dir = 0
@@ -443,6 +465,51 @@ class Config :
 
         if self.verbose:
             print( 'CONFIG: {} base={} git={}'.format(candidate,self.basedir, self.git_root ) )
+
+    def _git(self, *args, timeout=None):
+        return subprocess.run(['git', '-C', self.git_root] + list(args), capture_output=True,
+                              stdin=subprocess.DEVNULL, timeout=timeout)
+
+    def check_freshness(self):
+        '''
+        Exit (code 2) when the checkout is behind its upstream branch, so a stale
+        checkout can't pull live files over newer repo files or push old ones.
+        Skipped with ``--allow-stale`` or outside git; only warns when the branch
+        has no upstream or ``git fetch`` fails (offline). Unpushed local commits
+        are fine.
+        '''
+        if self.git_root is None or getattr(self.args, 'allow_stale', False):
+            return
+        upstream = self._git('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')
+        if upstream.returncode != 0:
+            print('WARNING: {} has no upstream branch, cannot check it is up to date'.format(self.git_root))
+            return
+        upstream = upstream.stdout.decode('utf-8').strip()
+
+        fetch_head = self._git('rev-parse', '--git-path', 'FETCH_HEAD').stdout.decode('utf-8').strip()
+        if fetch_head and not os.path.isabs(fetch_head):
+            fetch_head = os.path.join(self.git_root, fetch_head)
+        recent = fetch_head and os.path.exists(fetch_head) and time.time() - os.path.getmtime(fetch_head) < FETCH_MAX_AGE
+        if not recent:
+            try:
+                fetched = self._git('fetch', '--quiet', timeout=30).returncode == 0
+            except subprocess.TimeoutExpired:
+                fetched = False
+            if not fetched:
+                print('WARNING: git fetch failed (offline?), cannot check {} is up to date with {}'.format(self.git_root, upstream))
+                return
+
+        counts = self._git('rev-list', '--left-right', '--count', 'HEAD...@{u}')
+        if counts.returncode != 0:
+            print('WARNING: cannot compare {} with {}'.format(self.git_root, upstream))
+            return
+        ahead, behind = (int(x) for x in counts.stdout.decode('utf-8').split())
+        if behind:
+            print('STALE: {} is {} commit(s) behind {}. Run `git pull` first, or pass --allow-stale'.format(
+                self.git_root, behind, upstream))
+            sys.exit(2)
+        if self.verbose:
+            print('CONFIG: up to date with {}{}'.format(upstream, ', {} unpushed commit(s)'.format(ahead) if ahead else ''))
 
     def validate_config(self):
         valid = True
@@ -1157,6 +1224,8 @@ if __name__ == "__main__":
     parser.add_argument( '-v', '--verbose', action='store_true', help='verbose output' )
     parser.add_argument( '-t', '--difftool', choices=['auto','vimdiff','ksdiff'], default='auto' )
     parser.add_argument( '--nogit', action='store_true', help='always search files without git', default=False )
+    parser.add_argument( '--allow-stale', action='store_true', help='run even if the checkout is behind its upstream', default=False )
+    parser.add_argument( '--version', action='version', version=version_string() )
     parser.add_argument( '--show-secrets', action='store_true', help='allow diff/difftool on encrypted files (prints plaintext)', default=False )
     parser.add_argument( 'files',    metavar='FILES', nargs='*' )
     # intermixed: flags may come after FILES too (`install -e bin etc`), which plain
