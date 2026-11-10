@@ -75,7 +75,7 @@ except ImportError:  # pragma: no cover - not available on Windows
 
 # Bump on every change (date, plus .N for a second change the same day), so
 # `syncfiles.py --version` on each node shows which copies are out of date.
-__version__ = '2026.11.06'
+__version__ = '2026.11.10'
 
 # A fetch younger than this is reused: `dosync` runs syncfiles in many directories in a row.
 FETCH_MAX_AGE = 60
@@ -116,6 +116,20 @@ def group_id(group):
         return grp.getgrnam(group).gr_gid
     except KeyError:
         raise OSError('unknown group "{}"'.format(group))
+
+
+def add_exec_bits(from_path, to_path):
+    '''
+    ``shutil.copyfile`` copies content only, so a script installed to a fresh
+    machine came out 0644. Add the source's execute bits to the destination,
+    never removing any (a destination's own mode is otherwise kept).
+    '''
+    exec_bits = os.stat(from_path).st_mode & 0o111
+    if not exec_bits:
+        return
+    mode = os.stat(to_path).st_mode & 0o7777
+    if (mode | exec_bits) != mode:
+        os.chmod(to_path, mode | exec_bits)
 
 
 def write_atomic(path, data, mode, group=None):
@@ -1052,6 +1066,7 @@ class Config :
                 to_dir = os.path.dirname( to_path )
                 os.makedirs( to_dir, exist_ok=True )
                 shutil.copyfile( from_path, to_path )
+            add_exec_bits( from_path, to_path )
         else:
             print( 'cp {} {}'.format(from_path, to_path ) )
 

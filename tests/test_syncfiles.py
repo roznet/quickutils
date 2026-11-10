@@ -187,3 +187,27 @@ def test_validate_config_raises_without_force(tmp_path, monkeypatch):
 
 
 
+
+
+def test_copyfile_keeps_exec_bit(tmp_path):
+    src = tmp_path / "repo" / "tool.sh"
+    plain = tmp_path / "repo" / "notes.txt"
+    src.parent.mkdir()
+    src.write_text("#!/bin/sh\n", encoding="utf-8")
+    plain.write_text("x", encoding="utf-8")
+    os.chmod(src, 0o755)
+    os.chmod(plain, 0o644)
+    cfg = SimpleNamespace(args=make_args(execute=True))
+
+    dst = tmp_path / "live" / "tool.sh"
+    syncfiles.Config.copyfile(cfg, str(src), str(dst))
+    assert os.stat(dst).st_mode & 0o777 == 0o755
+
+    # an existing non-executable copy gets the bit too, its other bits kept
+    os.chmod(dst, 0o600)
+    syncfiles.Config.copyfile(cfg, str(src), str(dst))
+    assert os.stat(dst).st_mode & 0o777 == 0o711
+
+    dst_plain = tmp_path / "live" / "notes.txt"
+    syncfiles.Config.copyfile(cfg, str(plain), str(dst_plain))
+    assert not os.stat(dst_plain).st_mode & 0o111
